@@ -40,6 +40,10 @@ Repo: https://github.com/jagpreetsingh02/care-circle (public)
   live yet: needs `PUBLIC_BASE_URL` (ngrok), Sandbox webhook `<URL>/webhooks/twilio`, a Sandbox
   template Content SID; untested whether MediaUrl0 needs Basic auth.
 - Groq free tier: ~3 photos/min (7k input tokens/min). Avoid rapid-fire photos in the video.
+- **Groq daily quota hit on 23 Nov** (200k tokens/day, model qwen/qwen3.8-27b): the live test
+  `test_live_groq_reads_a_photo_into_valid_json` runs on every `pytest` when GROQ_API_KEY is set
+  and fails with 429 until the quota resets. Mock mode is unaffected. Consider gating live tests
+  behind an opt-in env flag so test runs don't spend demo quota.
 
 ## Keys / accounts available
 - Groq: **yes** (vision verified live) · Telegram bot: no · Twilio: in `.env`, unverified
