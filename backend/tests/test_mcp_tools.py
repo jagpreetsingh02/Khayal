@@ -323,12 +323,13 @@ def test_llm_cannot_escalate_amber_to_red(w):
         w.call("alert_family", {"level": "red", "reason": "glucose 60", "reading_id": r.id})
 
 
-def test_first_severe_bp_is_amber_then_repeat_goes_red(w):
+def test_first_severe_bp_is_not_sent_then_repeat_goes_red(w):
     first = w.confirmed_reading(
         type="bp", systolic=184, diastolic=98, created_at=utcnow() - timedelta(minutes=6)
     )
-    out = w.call("alert_family", {"level": "amber", "reason": "bp", "reading_id": first.id})
-    assert out["level"] == "amber" and out["ask_repeat"] is True
+    with pytest.raises(ToolError, match="Waiting for the repeat reading"):
+        w.call("alert_family", {"level": "amber", "reason": "bp", "reading_id": first.id})
+    assert w.outbox.outbox == []
     repeat = w.confirmed_reading(type="bp", systolic=182, diastolic=97)
     # even if the agent asks for amber, a red evaluation is sent as red
     out = w.call("alert_family", {"level": "amber", "reason": "bp", "reading_id": repeat.id})
@@ -499,3 +500,60 @@ def test_timestamps_roundtrip_as_utc(w):
     r = w.confirmed_reading(type="bp", systolic=120, diastolic=80)
     assert r.created_at.tzinfo is not None
     assert r.created_at.utcoffset() == UTC.utcoffset(None)
+
+
+def test_first_severe_bp_without_repeat_is_amber_after_15_minutes(w):
+    first = w.confirmed_reading(
+        type="bp", systolic=186, diastolic=122, created_at=utcnow() - timedelta(minutes=16)
+    )
+    with pytest.raises(ToolError, match="evaluated amber"):  # no escalation to red
+        w.call("alert_family", {"level": "red", "reason": "bp", "reading_id": first.id})
+    out = w.call("alert_family", {"level": "amber", "reason": "bp", "reading_id": first.id})
+    assert out["sent"] and out["rule"] == "bp_severe_no_repeat"
+    assert "No repeat reading was taken within 15 minutes." in out["message"]
+    assert "rest" not in out["message"].lower()
+
+
+def test_first_severe_bp_with_a_repeat_taken_gets_no_amber(w):
+    first = w.confirmed_reading(
+        type="bp", systolic=186, diastolic=122, created_at=utcnow() - timedelta(minutes=16)
+    )
+    w.confirmed_reading(
+        type="bp", systolic=150, diastolic=90, created_at=utcnow() - timedelta(minutes=9)
+    )
+    with pytest.raises(ToolError, match="No limit"):
+        w.call("alert_family", {"level": "amber", "reason": "bp", "reading_id": first.id})
+
+
+# ---------- consent (§6.5) ----------
+
+
+@pytest.mark.parametrize("status", ["pending", "paused", "revoked"])
+@pytest.mark.parametrize(
+    "tool,args",
+    [
+        ("log_reading", {"type": "glucose", "values": {"glucose_value": 110}}),
+        ("get_history", {}),
+        ("get_meds", {}),
+        ("create_reminder", {"med_id": "x", "times": ["08:00"]}),
+        ("alert_family", {"level": "amber", "reason": "x"}),
+        ("request_refill", {"med_id": "x", "qty": 10}),
+        ("weekly_summary", {}),
+    ],
+)
+def test_every_tool_refuses_a_parent_without_consent(w, status, tool, args):
+    w.store.set_consent(w.parent.id, status)
+    with pytest.raises(ToolError, match=f"Consent is {status}"):
+        w.call(tool, args)
+    assert w.store.list_readings(w.parent.id) == []
+    assert w.outbox.outbox == []
+    [entry] = w.store.list_audit(tool=tool)  # the refusal is audited too
+    assert "Consent is" in entry.result_json
+
+
+def test_consent_granted_again_unblocks_the_tools(w):
+    w.store.set_consent(w.parent.id, "paused")
+    with pytest.raises(ToolError):
+        w.call("get_meds")
+    w.store.set_consent(w.parent.id, "granted")
+    assert w.call("get_meds")["medicines"]

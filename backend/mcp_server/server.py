@@ -6,7 +6,10 @@ Guardrails built in:
 - log_reading only writes `unconfirmed` readings. Confirmation is the parent's read-back
   reply, handled server-side; there is no MCP tool that confirms a reading.
 - alert_family only fires for confirmed readings / server-evaluated rules, caps amber,
-  never caps red, and families only ever see server-written text.
+  never caps red, and families only ever see server-written text. A first severe BP
+  alerts nobody: red needs a confirming repeat, amber needs 15 minutes without one.
+- Consent (§6.5): a parent who has not agreed, or has paused / revoked, is refused by
+  every tool (nothing logged, alerted or reminded).
 - request_refill creates `pending_approval` only, capped at one month's supply, never for
   Schedule X medicines.
 - There is deliberately NO approve_refill tool: approval exists only in the dashboard
@@ -17,8 +20,10 @@ Guardrails built in:
 
 import json
 import re
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from fastmcp import Context, FastMCP
@@ -26,8 +31,8 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from pydantic import BaseModel, Field
 
-from app.alerts.evaluate import evaluate_confirmed_reading
-from app.alerts.notifier import Notifier, OutboxNotifier
+from app.alerts.evaluate import evaluate_for_alert
+from app.alerts.notifier import Notifier, StoreNotifier
 from app.alerts.thresholds import (
     LEVEL_RANK,
     Evaluation,
@@ -108,12 +113,18 @@ class AuditMiddleware(Middleware):
         return result
 
 
-def create_server(store: Store | None = None, notifier: Notifier | None = None) -> FastMCP:
-    """Build the MCP server. Defaults: store from settings, mock outbox notifier."""
-    notifier = notifier or OutboxNotifier()
+def create_server(
+    store: Store | None = None,
+    notifier: Notifier | None = None,
+    clock: Callable[[], datetime] = utcnow,
+) -> FastMCP:
+    """Build the MCP server. Defaults: store from settings; family messages go to the
+    store's outbox, from where the API delivers them."""
 
     def db() -> Store:
         return store or get_store()
+
+    notifier = notifier or StoreNotifier(db)
 
     mcp = FastMCP(
         "care-circle",
@@ -188,7 +199,7 @@ def create_server(store: Store | None = None, notifier: Notifier | None = None) 
     ) -> dict[str, Any]:
         """Confirmed readings for the parent over a time range (read-only)."""
         parent = parent_of(ctx)
-        since = utcnow() - timedelta(days=RANGE_DAYS[range])
+        since = clock() - timedelta(days=RANGE_DAYS[range])
         rows = db().list_readings(parent.id, since=since, type=type, status="confirmed")
         return {"range": range, "count": len(rows), "readings": [_reading_out(r) for r in rows]}
 
@@ -259,13 +270,15 @@ def create_server(store: Store | None = None, notifier: Notifier | None = None) 
                 raise ToolError(f"Reading {reading_id} not found for this parent.")
             if reading.status != "confirmed":
                 raise ToolError("No alert before the parent confirms the reading.")
-            evaluation = evaluate_confirmed_reading(s, reading)
+            evaluation = evaluate_for_alert(s, reading, clock())
         else:
             today = local_today(TZ)
             day_start = datetime.combine(today, datetime.min.time(), ZoneInfo(TZ))
             doses = s.list_dose_events(parent.id, since=day_start, until=day_start + timedelta(1))
             evaluation = evaluate_missed_doses(doses, today, t, TZ)
 
+        if evaluation.level == "none" and evaluation.ask_repeat:
+            raise ToolError(f"Not sent: {evaluation.reason}")
         if evaluation.level == "none":
             raise ToolError("No limit set by the doctor was crossed; alert not sent.")
         if LEVEL_RANK[level] > LEVEL_RANK[evaluation.level]:
@@ -274,7 +287,7 @@ def create_server(store: Store | None = None, notifier: Notifier | None = None) 
             )
         final: Evaluation = evaluation  # a red evaluation is sent as red even if amber asked
 
-        recent = s.list_alerts(parent.id, since=utcnow() - timedelta(days=1))
+        recent = s.list_alerts(parent.id, since=clock() - timedelta(days=1))
         if reading_id:
             dup = next(
                 (a for a in recent if a.reading_id == reading_id and a.level == final.level),
@@ -299,6 +312,7 @@ def create_server(store: Store | None = None, notifier: Notifier | None = None) 
                 reason=final.reason,
                 reading_id=reading_id,
                 notified_member_ids=[m.id for m in family],
+                created_at=clock(),
             )
         )
         return {
@@ -343,7 +357,7 @@ def create_server(store: Store | None = None, notifier: Notifier | None = None) 
         """Descriptive 7-day summary: counts and ranges against doctor-set limits only."""
         parent = parent_of(ctx)
         s = db()
-        end = utcnow()
+        end = clock()
         start = end - timedelta(days=7)
         readings = s.list_readings(parent.id, since=start, status="confirmed")
         doses = s.list_dose_events(parent.id, since=start, until=end)
@@ -366,5 +380,11 @@ def create_server(store: Store | None = None, notifier: Notifier | None = None) 
 mcp = create_server()
 
 
+def main() -> None:
+    """Run the server on MCP_SERVER_URL (default http://localhost:8001/mcp), localhost only."""
+    url = urlparse(get_settings().mcp_server_url)
+    mcp.run(transport="http", host="127.0.0.1", port=url.port or 8001, path=url.path or "/mcp")
+
+
 if __name__ == "__main__":
-    mcp.run(transport="http", host="127.0.0.1", port=8001)
+    main()

@@ -47,4 +47,9 @@ def resolve_parent(ctx: Context | None, store: Store) -> Member:
         raise ToolError("Unknown sender: not registered with Care Circle.")
     if member.role != "parent":
         raise ToolError("These tools act for a parent; the sender is not a parent.")
+    if member.consent_status != "granted":
+        raise ToolError(
+            f"Consent is {member.consent_status} for this parent: Care Circle does not log, "
+            "alert or remind until the parent agrees (or replies START after a pause)."
+        )
     return member

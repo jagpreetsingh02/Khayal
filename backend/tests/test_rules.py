@@ -5,6 +5,7 @@ import pytest
 from app.alerts.thresholds import (
     DEFAULT_THRESHOLDS,
     effective_thresholds,
+    evaluate_bp_no_repeat,
     evaluate_glucose,
     evaluate_missed_doses,
     evaluate_reading,
@@ -107,9 +108,9 @@ def test_red_glucose_mentions_emergency_numbers():
     assert "108/112" in evaluate_glucose(45, T).reason
 
 
-def test_first_severe_bp_is_amber_and_asks_for_repeat():
+def test_first_severe_bp_alerts_nobody_and_asks_for_repeat():
     ev = evaluate_reading(bp(182, 96), [], T)
-    assert ev.level == "amber" and ev.ask_repeat and ev.rule == "bp_severe_first"
+    assert ev.level == "none" and ev.ask_repeat and ev.rule == "bp_severe_first"
     assert evaluate_reading(bp(150, 121), [], T).ask_repeat  # diastolic alone counts
 
 
@@ -119,9 +120,28 @@ def test_repeat_severe_bp_after_5_minutes_is_red():
     assert ev.level == "red" and "108/112" in ev.reason
 
 
-def test_repeat_too_soon_or_too_late_stays_amber():
-    assert evaluate_reading(bp(181, 97), [bp(184, 98, minutes_ago=2)], T).level == "amber"
-    assert evaluate_reading(bp(181, 97), [bp(184, 98, minutes_ago=120)], T).level == "amber"
+def test_repeat_too_soon_or_too_late_is_a_new_first_reading():
+    for earlier in (bp(184, 98, minutes_ago=2), bp(184, 98, minutes_ago=120)):
+        ev = evaluate_reading(bp(181, 97), [earlier], T)
+        assert ev.level == "none" and ev.ask_repeat
+
+
+def test_no_repeat_within_15_minutes_is_amber_with_family_wording():
+    first = bp(186, 122, minutes_ago=16)
+    ev = evaluate_bp_no_repeat(first, [], NOW, T)
+    assert ev.level == "amber" and ev.rule == "bp_severe_no_repeat"
+    assert "No repeat reading was taken within 15 minutes" in ev.reason
+    assert "rest" not in ev.reason.lower() and "please" not in ev.reason.lower()
+
+
+def test_no_repeat_rule_waits_15_minutes_and_respects_a_repeat():
+    first = bp(186, 122, minutes_ago=10)
+    waiting = evaluate_bp_no_repeat(first, [], NOW, T)
+    assert waiting.level == "none" and waiting.ask_repeat
+    first = bp(186, 122, minutes_ago=16)
+    repeat = bp(150, 90, minutes_ago=8)
+    assert evaluate_bp_no_repeat(first, [repeat], NOW, T).level == "none"
+    assert evaluate_bp_no_repeat(bp(150, 90, minutes_ago=30), [], NOW, T).level == "none"
 
 
 def test_repeat_that_comes_down_is_not_red():
@@ -149,7 +169,7 @@ def test_thresholds_editable_per_parent():
     )
     assert custom["bp_severe_systolic"] == 170
     assert "not_a_rule" not in custom
-    assert evaluate_reading(bp(172, 90), [], custom).level == "amber"
+    assert evaluate_reading(bp(172, 90), [], custom).ask_repeat
     assert evaluate_reading(bp(172, 90), [], T).level == "none"  # over limit once: no alert
     assert DEFAULT_THRESHOLDS["bp_severe_systolic"] == 180  # defaults untouched
 

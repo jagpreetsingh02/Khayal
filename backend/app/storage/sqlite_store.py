@@ -3,7 +3,7 @@
 import json
 import sqlite3
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
@@ -19,6 +19,7 @@ from app.storage.models import (
     Family,
     Medicine,
     Member,
+    OutboxMessage,
     Reading,
     ReadingStatus,
     ReadingType,
@@ -75,6 +76,10 @@ CREATE TABLE IF NOT EXISTS conversation_state (
   member_id TEXT PRIMARY KEY REFERENCES members(id), state TEXT NOT NULL, payload TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS outbox (
+  id TEXT PRIMARY KEY, member_id TEXT NOT NULL REFERENCES members(id), kind TEXT NOT NULL,
+  text TEXT NOT NULL, created_at TEXT NOT NULL, delivered_at TEXT
+);
 CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY, actor TEXT NOT NULL, tool TEXT NOT NULL, args_json TEXT NOT NULL,
   result_json TEXT NOT NULL, parent_id TEXT, created_at TEXT NOT NULL
@@ -126,9 +131,13 @@ class SQLiteStore(Store):
     def __init__(self, path: str = ":memory:") -> None:
         # One shared connection guarded by a lock: works for :memory: and for the
         # thread pool FastMCP / FastAPI use for sync handlers.
-        self._conn = sqlite3.connect(path, check_same_thread=False)
+        # The API and the MCP server are separate processes sharing one file: WAL lets one
+        # read while the other writes, and busy_timeout waits out short write locks.
+        self._conn = sqlite3.connect(path, check_same_thread=False, timeout=10)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
+        if path != ":memory:":
+            self._conn.execute("PRAGMA journal_mode = WAL")
         self._lock = threading.Lock()
         with self._lock, self._conn:
             self._conn.executescript(SCHEMA)
@@ -373,6 +382,24 @@ class SQLiteStore(Store):
         state = state.model_copy(update={"updated_at": utcnow()})
         return self._insert("conversation_state", state, upsert=True)
 
+    def list_conversation_states(self) -> list[ConversationState]:
+        return self._query(ConversationState, "SELECT * FROM conversation_state")
+
+    # --- outbox ---
+    def add_outbox(self, message: OutboxMessage) -> OutboxMessage:
+        return self._insert("outbox", message)
+
+    def take_outbox(self) -> list[OutboxMessage]:
+        now = _ts(utcnow())
+        with self._lock, self._conn:
+            rows = self._conn.execute(
+                "SELECT * FROM outbox WHERE delivered_at IS NULL ORDER BY created_at, rowid"
+            ).fetchall()
+            self._conn.executemany(
+                "UPDATE outbox SET delivered_at = ? WHERE id = ?", [(now, r["id"]) for r in rows]
+            )
+        return [_from_row(OutboxMessage, r).model_copy(update={"delivered_at": now}) for r in rows]
+
     # --- audit ---
     def add_audit(self, entry: AuditEntry) -> AuditEntry:
         return self._insert("audit_log", entry)
@@ -385,3 +412,36 @@ class SQLiteStore(Store):
         sql += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
         params.append(limit)
         return self._query(AuditEntry, sql, tuple(params))
+
+    # --- demo helpers ---
+    def shift_parent_times(self, parent_id: str, delta: timedelta) -> None:
+        moved = [
+            ("readings", self.list_readings(parent_id), ("created_at", "confirmed_at")),
+            ("alerts", self.list_alerts(parent_id), ("created_at",)),
+        ]
+        with self._lock, self._conn:
+            for table, rows, columns in moved:
+                for row in rows:
+                    fields = {c: _ts(getattr(row, c) + delta) for c in columns if getattr(row, c)}
+                    sets = ", ".join(f"{c} = :{c}" for c in fields)
+                    self._conn.execute(
+                        f"UPDATE {table} SET {sets} WHERE id = :id", fields | {"id": row.id}
+                    )
+
+    def reset(self) -> None:
+        tables = [
+            "outbox",
+            "audit_log",
+            "conversation_state",
+            "refills",
+            "alerts",
+            "thresholds",
+            "dose_events",
+            "medicines",
+            "readings",
+            "members",
+            "families",
+        ]
+        with self._lock, self._conn:
+            for table in tables:
+                self._conn.execute(f"DELETE FROM {table}")
