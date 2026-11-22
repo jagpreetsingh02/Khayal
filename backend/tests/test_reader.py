@@ -321,7 +321,8 @@ live = pytest.mark.skipif(
 
 @live
 def test_live_groq_reads_a_photo_into_valid_json():
-    reader = GroqReader(_settings.groq_api_key, _settings.groq_vision_model)
+    # Free tier: ~3 photos/min, so allow waiting out a rate limit.
+    reader = GroqReader(_settings.groq_api_key, _settings.groq_vision_model, max_wait=65)
     r = reader.read_meter(sample("synthetic_bp_normal.jpg"))
     assert isinstance(r, MeterReading)  # valid, schema-checked JSON
     assert r.device_type == "bp" and (r.systolic, r.diastolic) == (132, 84)
