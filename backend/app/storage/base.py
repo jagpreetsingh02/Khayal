@@ -7,6 +7,7 @@ from datetime import datetime
 from app.storage.models import (
     Alert,
     AuditEntry,
+    ConsentStatus,
     ConversationState,
     DoseEvent,
     DoseStatus,
@@ -47,6 +48,17 @@ class Store(ABC):
         """Server-side sender mapping: (channel, sender address) -> member."""
 
     @abstractmethod
+    def set_consent(
+        self,
+        member_id: str,
+        status: ConsentStatus,
+        *,
+        text_version: str | None = None,
+        at: datetime | None = None,
+    ) -> Member:
+        """Record the parent's consent reply (§6.5): granted / paused / revoked."""
+
+    @abstractmethod
     def list_members(self, family_id: str, role: Role | None = None) -> list[Member]: ...
 
     # --- readings ---
@@ -83,6 +95,10 @@ class Store(ABC):
 
     @abstractmethod
     def list_medicines(self, parent_id: str) -> list[Medicine]: ...
+
+    @abstractmethod
+    def confirm_medicine(self, medicine_id: str) -> Medicine:
+        """The parent confirmed the strip read-back; only then do reminders apply."""
 
     @abstractmethod
     def set_medicine_times(self, medicine_id: str, times: list[str]) -> Medicine: ...

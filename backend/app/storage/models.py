@@ -46,6 +46,7 @@ class Member(BaseModel):
     language: str = "en"
     consent_status: ConsentStatus = "pending"
     consent_at: datetime | None = None
+    consent_text_version: str | None = None  # which consent notice the parent agreed to (§6.5)
 
 
 class Reading(BaseModel):
