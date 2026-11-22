@@ -110,8 +110,10 @@ Repo: https://github.com/jagpreetsingh02/care-circle (public)
 - 2026-11-23: Sharing (§6.5, parent-first) = new `sharing` table (readings / alerts / medicines,
   default all on). Children see a category only if shared AND consent is granted or paused
   (nothing when pending/revoked); audit entries of unshared categories are redacted.
-  `alert_family` sends nothing if alerts aren't shared (parent told "you chose not to share");
-  `request_refill` refused if medicines aren't shared (nobody could approve).
+  `alert_family` holds back AMBER if alerts aren't shared (parent told "you chose not to
+  share") but RED always reaches the family (user decision 2026-11-23); children see red alerts
+  on the dashboard too (overview `alerts_shared: false` = red only). `request_refill` refused if
+  medicines aren't shared (nobody could approve).
 - 2026-11-23: Refill decisions: `decide_refill` is an atomic conditional update from
   `pending_approval` (ConflictError otherwise). Same decision twice -> 200 `changed:false`;
   opposite decision -> 409. Approve -> demo pharmacy stub sets `sent_to_pharmacy` +
@@ -125,6 +127,9 @@ Repo: https://github.com/jagpreetsingh02/care-circle (public)
   (typo guard) and ordering checks (red < amber below < amber above; limit < severe).
 
 ## Session log (newest first, one line each)
+- 2026-11-23: Follow-up: red alerts always go out even when alerts aren't shared (MCP +
+  dashboard + UI note); 325 tests. Note: stopping a `uv run start.py` background task can leave
+  start.py + servers running — check ports 8000/8001 after stopping.
 - 2026-11-23: Phase 4 done — dashboard API (auth, readings, alerts+ack, refills approve/reject,
   medicines, thresholds, sharing, audit, MCP tool list, low-stock demo), React dashboard (7
   sections, mobile-first, IST, 4 s polling), served at /dashboard, `start.py --seed`, README

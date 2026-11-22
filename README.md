@@ -120,7 +120,7 @@ flowchart TB
 | `get_history` | Read confirmed readings (today / 7d / 14d / 30d) | Read-only; only the sender's own data |
 | `get_meds` | Read medicines, reminder times and stock | Read-only |
 | `create_reminder` | Set daily reminder times | Only for medicines the parent confirmed; `HH:MM` validated |
-| `alert_family` | Tell the family a limit was crossed | Reading must be confirmed; server re-evaluates the doctor's limits; cannot escalate amber→red; first severe BP needs a repeat; amber capped at 3/day (red never capped); deduped per reading; family sees server-written text only; nothing sent if the parent does not share alerts |
+| `alert_family` | Tell the family a limit was crossed | Reading must be confirmed; server re-evaluates the doctor's limits; cannot escalate amber→red; first severe BP needs a repeat; amber capped at 3/day (red never capped); deduped per reading; family sees server-written text only; amber is held back if the parent does not share alerts, but **red always reaches the family** |
 | `request_refill` | Ask the family to approve a refill | Creates `pending_approval` only; capped at one month's supply; Schedule X refused; one pending per medicine; refused if the parent does not share medicines |
 | `weekly_summary` | Descriptive 7-day summary | Output filter blocks diagnosis and dosing words |
 | ~~`approve_refill`~~ | **Does not exist** | Approval lives only in the dashboard API, triggered by a family member |
@@ -165,7 +165,8 @@ Then open, on one port:
    Approving twice is safe; the first click wins.
 6. **What the AI did:** every MCP tool call, plus the family's approval. Approvals by the AI: **0**.
 7. Sign out, sign in as **Kamla** (the parent) → **Limits & sharing** → turn off *Medicines*.
-   Signed in as Ravi again, medicines and refills now say "not shared". Parent-first.
+   Signed in as Ravi again, medicines and refills now say "not shared". Parent-first. (Turning
+   off *Alerts* hides amber alerts; red alerts still reach the family.)
 
 Type `what's the weather?` in the parent chat: "I can only help with readings and medicines."
 **Reset demo** in the simulator starts a fresh family with consent *pending* (the onboarding
@@ -229,8 +230,9 @@ Interactive docs at http://localhost:8000/docs.
   rule-based plausibility checks and mandatory parent confirmation. We will report an accuracy
   number only after measuring it on real photos.
 - **Parent consents, not the child.** The parent agrees in chat, can reply STOP at any time, and
-  chooses what the family sees (readings, alerts, medicines). Children cannot change it. While
-  paused, nothing is logged, alerted or reminded. SPDI-compliant today, built for DPDP (consent
+  chooses what the family sees (readings, alerts, medicines). Children cannot change it. One
+  exception for safety: red alerts always reach the family, even if alerts are not shared.
+  While paused, nothing is logged, alerted or reminded. SPDI-compliant today, built for DPDP (consent
   duties start 13 May 2027). We do not claim end-to-end encryption.
 - **Refills happen off WhatsApp.** WhatsApp's policy prohibits drug sales, so chat only carries
   status messages. Orders go to a licensed pharmacy that checks the prescription (a clearly
