@@ -284,6 +284,7 @@ def overview(parent_id: str, request: Request, me: Me):
             rows = store.list_readings(parent.id, type=kind, status="confirmed")
             latest[kind] = _reading(rows[-1]) if rows else None
         out["latest"] = latest
+        out["limits"] = effective_thresholds(store.list_thresholds(parent.id))
     if _can_see(store, me, parent, "medicines"):
         out["today_doses"] = _today_doses(store, parent)
         out["pending_refills"] = [
@@ -307,6 +308,7 @@ def readings(
     rows = store.list_readings(parent.id, since=since, status="confirmed")
     return {
         "range": range,
+        "now": _iso(utcnow()),
         "readings": [_reading(r) for r in rows],
         "limits": effective_thresholds(store.list_thresholds(parent.id)),
     }
