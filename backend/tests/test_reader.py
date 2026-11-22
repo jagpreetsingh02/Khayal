@@ -303,6 +303,17 @@ def test_groq_reader_fails_fast_when_rate_limit_wait_is_too_long():
     assert "org_01abcDEF123" not in str(info.value)  # account ids are redacted
 
 
+def test_groq_reader_counts_tokens_from_usage():
+    reply = httpx.Response(
+        200,
+        json={"choices": [{"message": {"content": METER_JSON}}], "usage": {"total_tokens": 2412}},
+    )
+    reader = FakeGroq(reply, chat(METER_JSON)).reader()
+    reader.read_meter(ImageInput(data=jpeg()))
+    reader.read_meter(ImageInput(data=jpeg()))  # no usage block: counts the call, 0 tokens
+    assert (reader.calls, reader.tokens_used) == (2, 2412)
+
+
 def test_groq_reader_requires_key_and_model():
     with pytest.raises(ValueError, match="GROQ_API_KEY"):
         GroqReader("", "m")
@@ -310,16 +321,16 @@ def test_groq_reader_requires_key_and_model():
         GroqReader(FAKE_KEY, "")
 
 
-# --- live Groq (skipped without a key) ---
+# --- live Groq: opt-in only (RUN_LIVE_TESTS=1), it spends the daily token quota ---
 
 _settings = get_settings()
-live = pytest.mark.skipif(
+
+
+@pytest.mark.live
+@pytest.mark.skipif(
     not (_settings.groq_api_key and _settings.groq_vision_model),
     reason="needs GROQ_API_KEY and GROQ_VISION_MODEL in .env",
 )
-
-
-@live
 def test_live_groq_reads_a_photo_into_valid_json():
     # Free tier: ~3 photos/min, so allow waiting out a rate limit.
     reader = GroqReader(_settings.groq_api_key, _settings.groq_vision_model, max_wait=65)
