@@ -31,6 +31,8 @@ def seed_fresh_family(store: Store) -> Member:
         )
     )
     for name, ref in CHILDREN:
+        if store.find_member_by_channel("simulator", ref):
+            continue  # number already registered elsewhere: keep that member
         store.add_member(
             Member(
                 family_id=family.id,

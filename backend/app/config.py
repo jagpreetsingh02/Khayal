@@ -22,9 +22,13 @@ class Settings(BaseSettings):
     groq_vision_model: str = ""
     groq_agent_model: str = ""
     telegram_bot_token: str = ""
+    telegram_mode: Literal["polling", "webhook"] = "polling"
+    telegram_webhook_secret: str = ""
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = "whatsapp:+14155238886"
+    twilio_template_content_sid: str = ""  # Sandbox template for messages outside 24 h
+    public_base_url: str = ""  # URL Twilio calls (signature check), e.g. https://x.ngrok.app
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = ""
     aws_region: str = "ap-south-1"

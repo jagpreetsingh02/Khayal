@@ -37,7 +37,7 @@ def create_app(service: CareCircleService | None = None, tick_seconds: float = T
         if tick_seconds:
             tasks.append(asyncio.create_task(_ticker(svc, tick_seconds)))
         poller = getattr(svc.channels.get("telegram"), "start_polling", None)
-        if poller and service is None:
+        if poller and service is None and get_settings().telegram_mode == "polling":
             tasks.append(asyncio.create_task(poller(svc)))
         yield
         for task in tasks:
