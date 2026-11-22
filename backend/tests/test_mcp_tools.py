@@ -437,12 +437,21 @@ def test_refill_refused_when_parent_does_not_share_medicines(w):
     assert w.store.list_refills(w.parent.id) == [] and w.outbox.outbox == []
 
 
-def test_alert_not_sent_when_parent_does_not_share_alerts(w):
+def test_amber_not_sent_when_parent_does_not_share_alerts(w):
     w.store.set_sharing(Sharing(parent_id=w.parent.id, alerts=False))
-    r = w.confirmed_reading(type="glucose", glucose_mgdl=45)
-    out = w.call("alert_family", {"level": "red", "reason": "glucose 45", "reading_id": r.id})
+    r = w.confirmed_reading(type="glucose", glucose_mgdl=60)  # amber (54-69)
+    out = w.call("alert_family", {"level": "amber", "reason": "glucose 60", "reading_id": r.id})
     assert out["sent"] is False and out["not_shared"] is True
     assert w.outbox.outbox == [] and w.store.list_alerts(w.parent.id) == []
+
+
+def test_red_always_reaches_the_family_even_when_alerts_not_shared(w):
+    w.store.set_sharing(Sharing(parent_id=w.parent.id, alerts=False))
+    r = w.confirmed_reading(type="glucose", glucose_mgdl=45)  # red (< 54)
+    out = w.call("alert_family", {"level": "red", "reason": "glucose 45", "reading_id": r.id})
+    assert out["sent"] is True and out["level"] == "red"
+    assert {m.member_id for m in w.outbox.outbox} == {c.id for c in w.children}
+    assert all("108/112" in m.text for m in w.outbox.outbox)
 
 
 # ---------- weekly_summary ----------

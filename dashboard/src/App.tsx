@@ -155,12 +155,9 @@ function Shell({ onSignOut }: { onSignOut: () => void }) {
           ) : (
             <NotShared parent={parent.name} category="readings" />
           ))}
-        {tab === 'alerts' &&
-          (s.visible_to_me.alerts ? (
-            <AlertsPage parentId={parent.id} />
-          ) : (
-            <NotShared parent={parent.name} category="alerts" />
-          ))}
+        {tab === 'alerts' && (
+          <AlertsPage parentId={parent.id} parent={parent.name} shared={s.visible_to_me.alerts} />
+        )}
         {tab === 'refills' &&
           (s.visible_to_me.medicines ? (
             <RefillsPage parentId={parent.id} />

@@ -248,6 +248,43 @@ def test_child_sees_only_shared_categories(dash):
     assert dash.c.get(f"/api/parents/{pid}/readings", headers=hp).status_code == 200
 
 
+def test_child_sees_red_alerts_even_when_alerts_not_shared(dash):
+    from app.storage.models import Alert
+
+    pid = dash.parent.id
+    red = dash.store.add_alert(Alert(parent_id=pid, level="red", reason="Repeat BP 188/122"))
+    dash.store.set_sharing(dash.store.get_sharing(pid).model_copy(update={"alerts": False}))
+    h = dash.login(dash.ravi)
+    levels = {a["level"] for a in dash.c.get("/api/alerts", headers=h).json()["alerts"]}
+    assert levels == {"red"}  # seeded ambers are hidden, the red one is not
+    ov = dash.c.get(f"/api/parents/{pid}/overview", headers=h).json()
+    assert ov["alerts_shared"] is False
+    assert [a["id"] for a in ov["active_alerts"]] == [red.id]
+    ack = dash.c.post(f"/api/alerts/{red.id}/acknowledge", headers=h)
+    assert ack.status_code == 200 and ack.json()["changed"] is True
+    amber = next(a for a in dash.store.list_alerts(pid) if a.level == "amber")
+    assert dash.c.post(f"/api/alerts/{amber.id}/acknowledge", headers=h).status_code == 403
+
+
+def test_red_alert_reaches_children_in_chat_when_alerts_not_shared(dash):
+    pid = dash.parent.id
+    dash.store.set_sharing(dash.store.get_sharing(pid).model_copy(update={"alerts": False}))
+
+    def say(**kw):
+        r = dash.c.post("/simulator/api/send", json={"sender_ref": PARENT_REF, **kw})
+        assert r.status_code == 200, r.text
+        return dash.feed(dash.parent)[-1]
+
+    say(sample="synthetic_bp_high.jpg")
+    say(text="1")
+    dash.c.post("/simulator/api/skip", json={"minutes": 5})
+    say(sample="synthetic_bp_high.jpg")
+    reply = say(text="1")
+    assert "I have told your family" in reply
+    assert any("RED alert" in t for t in dash.feed(dash.ravi))
+    assert any("RED alert" in t for t in dash.feed(dash.priya))
+
+
 def test_nothing_shared_after_consent_is_revoked(dash):
     dash.store.set_consent(dash.parent.id, "revoked")
     h, pid = dash.login(dash.ravi), dash.parent.id

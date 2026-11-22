@@ -2,7 +2,7 @@ import type { Limits, Overview, Reading } from '../api'
 import { ago, hhmm12, istWhen } from '../time'
 import { AlertItem } from './Alerts'
 import { PendingRefill } from './Refills'
-import { Card, DoseChip, Empty, Icon, NotShared, Skeleton } from './ui'
+import { Card, DoseChip, Empty, Icon, NotShared, RedOnlyNote, Skeleton } from './ui'
 
 type Tab = 'trends' | 'alerts' | 'refills' | 'medicines'
 
@@ -102,32 +102,27 @@ export function OverviewPage({
         </Card>
       )}
 
-      {data.active_alerts === undefined ? (
-        <Card title="Alerts">
-          <NotShared parent={parent} category="alerts" />
-        </Card>
-      ) : (
-        <Card
-          title={alerts.length ? `Open alerts (${alerts.length})` : 'Alerts'}
-          action={
-            <button className="link" onClick={() => go('alerts')}>
-              All alerts
-            </button>
-          }
-        >
-          {alerts.length ? (
-            <ul className="alert-list">
-              {alerts.slice(0, 3).map((a) => (
-                <AlertItem key={a.id} alert={a} onChange={onChange} />
-              ))}
-            </ul>
-          ) : (
-            <p className="all-clear">
-              <Icon name="check" /> No open alerts in the last 7 days.
-            </p>
-          )}
-        </Card>
-      )}
+      <Card
+        title={alerts.length ? `Open alerts (${alerts.length})` : 'Alerts'}
+        action={
+          <button className="link" onClick={() => go('alerts')}>
+            All alerts
+          </button>
+        }
+      >
+        {data.alerts_shared === false && <RedOnlyNote parent={parent} />}
+        {alerts.length ? (
+          <ul className="alert-list">
+            {alerts.slice(0, 3).map((a) => (
+              <AlertItem key={a.id} alert={a} onChange={onChange} />
+            ))}
+          </ul>
+        ) : (
+          <p className="all-clear">
+            <Icon name="check" /> No open alerts in the last 7 days.
+          </p>
+        )}
+      </Card>
 
       {data.latest === undefined || !data.limits ? (
         <Card title="Latest readings">

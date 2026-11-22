@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         phone.reload()
         phone.get_by_role("button", name="Approve").first.click()
         phone.wait_for_timeout(1500)
-        shot(phone, "refills", "dashboard-refills-phone.png", ".table")
+        shot(phone, "refills", "dashboard-refills-phone.png", ".history li")
         shot(desk, "audit", "dashboard-audit.png", ".audit-item")
 
         parent = page(PHONE, s["kamla"])
