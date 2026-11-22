@@ -199,7 +199,9 @@ def evaluate_missed_doses(
 
 
 def local_today(tz: str = "Asia/Kolkata", now: datetime | None = None) -> date:
-    return (now or datetime.now(ZoneInfo(tz))).astimezone(ZoneInfo(tz)).date()
+    from app.storage.models import utcnow  # app clock (includes the demo offset)
+
+    return (now or utcnow()).astimezone(ZoneInfo(tz)).date()
 
 
 # --- Editing limits on the dashboard ("set by your doctor") ---

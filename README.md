@@ -51,7 +51,10 @@ reach the family.
    on the dashboard → licensed partner pharmacy (outside WhatsApp; a labelled stub in this demo).
 5. **Family dashboard:** trends, alerts, pending approvals, medicines, doctor-set limits,
    sharing and consent, and a live log of every tool call the AI made.
-6. Coming next: voice notes in Indian languages and a weekly descriptive summary (Phase 5).
+6. **Reminders and voice.** Medicine reminders at the parent's times, one gentle follow-up,
+   missed-dose alerts, automatic low-stock refill *requests* and a weekly summary for the
+   family. Voice notes in and out (Hindi and English, Tamil started), and a phone call to the
+   family for a confirmed red reading.
 
 ### Three human checkpoints
 
@@ -120,7 +123,7 @@ flowchart TB
 | `get_history` | Read confirmed readings (today / 7d / 14d / 30d) | Read-only; only the sender's own data |
 | `get_meds` | Read medicines, reminder times and stock | Read-only |
 | `create_reminder` | Set daily reminder times | Only for medicines the parent confirmed; `HH:MM` validated |
-| `alert_family` | Tell the family a limit was crossed | Reading must be confirmed; server re-evaluates the doctor's limits; cannot escalate amber→red; first severe BP needs a repeat; amber capped at 3/day (red never capped); deduped per reading; family sees server-written text only; amber is held back if the parent does not share alerts, but **red always reaches the family** |
+| `alert_family` | Tell the family a limit was crossed | Reading must be confirmed; server re-evaluates the doctor's limits; cannot escalate amber→red; first severe BP needs a repeat; amber capped at 3/day (red never capped); deduped per reading; family sees server-written text only; amber is held back if the parent does not share alerts, but **red always reaches the family**; only red on a confirmed reading may ring the family |
 | `request_refill` | Ask the family to approve a refill | Creates `pending_approval` only; capped at one month's supply; Schedule X refused; one pending per medicine; refused if the parent does not share medicines |
 | `weekly_summary` | Descriptive 7-day summary | Output filter blocks diagnosis and dosing words |
 | ~~`approve_refill`~~ | **Does not exist** | Approval lives only in the dashboard API, triggered by a family member |
@@ -168,11 +171,20 @@ Then open, on one port:
    Signed in as Ravi again, medicines and refills now say "not shared". Parent-first. (Turning
    off *Alerts* hides amber alerts; red alerts still reach the family.)
 
+8. **Reminders and voice (demo clock):** press **⏰ Next reminder**. The clock jumps to the next
+   medicine time and Kamla gets "8:00 AM: time for Telma 40…" with a Hindi voice note (▶ plays
+   it with your browser's voice in mock mode). Press 🗣️ → “मैंने दवा ले ली” → marked taken,
+   answered with a voice note. Or press **⏩ 30 min** without answering: one gentle follow-up;
+   two missed doses in a day send the family one AMBER alert. **📊 Weekly summary** sends the
+   7-day summary to the children. In step 2 the children also get an **Incoming call** card.
+
 Type `what's the weather?` in the parent chat: "I can only help with readings and medicines."
 **Reset demo** in the simulator starts a fresh family with consent *pending* (the onboarding
 path: `hello` → consent notice → **1**).
 
 ### Screenshots
+
+![Simulator: Hindi voice-note reminder and replies in the parent's chat, and an Incoming call card for the red alert in each child's pane](docs/screenshots/voice-and-call.png)
 
 | Trends with doctor-set bands | What the AI did |
 |---|---|
@@ -214,6 +226,49 @@ Dashboard API (all routes need the demo session): `GET /api/parents/{id}/reading
 `GET|PUT /api/parents/{id}/thresholds`, `GET|PUT /api/parents/{id}/sharing`, `GET /api/audit`.
 Interactive docs at http://localhost:8000/docs.
 
+## Voice and reminders
+
+**Reminders (scheduler, `app/scheduler/jobs.py`).** Every 30 seconds one idempotent pass per
+consenting parent:
+
+| Job | When | What happens |
+|---|---|---|
+| Reminder | at each confirmed medicine's time (IST) | "8:00 AM: time for Telma 40. Reply 1 when taken" + voice note |
+| Follow-up | no "taken" reply in 30 min | the dose counts as missed; **one** gentle follow-up (a later "1" still counts) |
+| Missed doses | 2+ missed in a day (doctor-set limit) | `alert_family` AMBER via MCP, at most once a day, never a call |
+| Low stock | ≤ 5 days left | `request_refill` via the real MCP server → family approves on the dashboard. Never approves anything; one try per medicine per day |
+| Weekly summary | Sunday 19:00 IST | the `weekly_summary` tool's descriptive text to the children (only if the parent shares readings) |
+
+The simulator's **demo clock** (⏰ Next reminder, ⏩ 30 min, ⏩ 1 day) moves one shared clock for
+the API and the MCP server, running the jobs every 5 simulated minutes. Tests drive the same
+code through `Scheduler.run(now)`.
+
+**Voice notes out (TTS).** Messages carry a short phrase in the member's language (Hindi and
+English; Tamil for reminders and replies, as a stretch); the full chat text stays in English.
+
+- `VOICE=mock` (default): "voice note" bubbles that your browser reads aloud. No keys.
+- `VOICE=elevenlabs` + `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`: real MP3 voice notes.
+  Model `eleven_v4_turbo` (lists Hindi and Tamil in ElevenLabs' models overview, checked 23 Nov
+  2026; `eleven_flash_v2_5` is cheaper per character). Audio is cached by text, so repeated
+  reminders cost nothing, and `ELEVENLABS_DAILY_CHAR_BUDGET` (default 1500 characters/day)
+  protects the free plan. No key, over budget or an API error: the message goes as text only.
+- `VOICE=none`: text only.
+
+**Voice notes in (STT).** 🎤 in the simulator records in the browser; 🗣️ sends sample voice
+notes. With ElevenLabs, recordings go to Scribe (`scribe_v3`). The transcript is handled like a
+typed reply: "मैंने दवा ले ली" / "I took my medicine" marks the dose taken, "My BP is 142 by 88"
+becomes a reading **that still needs the parent's "1"** after the read-back, anything else gets
+the fixed refusal. In mock mode only the sample voice notes are understood.
+
+**Red-alert call.** Only a RED alert on a confirmed reading (a severe BP confirmed by a repeat,
+or very low glucose) rings the family; amber and missed doses never do. `CALL_PROVIDER=mock`
+(default) shows an "Incoming call" card with the spoken script in each child's simulator pane.
+`CALL_PROVIDER=twilio` (untested live) calls real numbers registered on the Twilio channel only,
+playing the TTS audio (needs `PUBLIC_BASE_URL`) or reading the script; set `TWILIO_CALL_FROM`.
+
+Voice notes go to the simulator; Telegram and WhatsApp still receive the text only (sending audio
+there needs a public audio URL: Phase 6).
+
 ## Enabling real providers
 
 - **Vision reader (Groq):** `LLM_PROVIDER=groq`, `GROQ_API_KEY`; 📎 in the simulator then uploads
@@ -225,6 +280,8 @@ Interactive docs at http://localhost:8000/docs.
   `PUBLIC_BASE_URL` (e.g. an ngrok https URL) and the Sandbox webhook set to
   `<PUBLIC_BASE_URL>/webhooks/twilio`. Requests without a valid `X-Twilio-Signature` are
   refused. Alerts to numbers outside the 24-hour window need `TWILIO_TEMPLATE_CONTENT_SID`.
+- **Voice (ElevenLabs):** `VOICE=elevenlabs`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`
+  (see Voice and reminders). Red-alert phone calls: `CALL_PROVIDER=twilio` + `TWILIO_CALL_FROM`.
 - **Dashboard:** set your own `DASHBOARD_DEMO_TOKEN` before showing it to anyone.
 
 ## Safety and privacy
@@ -247,7 +304,8 @@ Interactive docs at http://localhost:8000/docs.
   refusal (general-purpose AI chatbots are banned on the WhatsApp Business API).
 - **Prompt injection.** Text inside a photo is data. The vision call has no tools, and every
   limit and cap is enforced by the server, not by the prompt.
-- **Data minimisation.** Photos are read and dropped; only the numbers are kept. Every AI tool
+- **Data minimisation.** Photos and voice recordings are read and dropped; only the numbers
+  (and the transcript shown in the chat) are kept. Every AI tool
   call and every family decision is in the audit log. The MCP server binds to localhost.
 
 ## Roadmap
@@ -257,7 +315,7 @@ Interactive docs at http://localhost:8000/docs.
 - [x] Phase 2: photo reader and read-back confirmation
 - [x] Phase 3: channels and agent, golden path in the web simulator
 - [x] Phase 4: family dashboard and refill approval
-- [ ] Phase 5: voice replies, reminder scheduler, low-stock detection, weekly summary
+- [x] Phase 5: reminder scheduler, low-stock requests, weekly summary, voice notes, red-alert call
 - [ ] Phase 6: AWS deployment (Mumbai region), polish and measured reading accuracy
 
 ## Team

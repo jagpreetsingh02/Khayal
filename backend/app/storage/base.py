@@ -116,6 +116,29 @@ class Store(ABC):
     def add_dose_event(self, event: DoseEvent) -> DoseEvent: ...
 
     @abstractmethod
+    def mark_dose_followed_up(self, event_id: str, at: datetime) -> DoseEvent:
+        """No reply 30 min after the reminder: missed, one follow-up sent (scheduler)."""
+
+    @abstractmethod
+    def list_parents(self) -> list[Member]:
+        """Every parent in every family (the scheduler walks them)."""
+
+    # --- small key/value state: demo clock, job claims, usage counters ---
+    @abstractmethod
+    def get_kv(self, key: str) -> str | None: ...
+
+    @abstractmethod
+    def set_kv(self, key: str, value: str) -> None: ...
+
+    @abstractmethod
+    def claim(self, key: str) -> bool:
+        """Atomically mark a job key as done; True only for the first caller (idempotent jobs)."""
+
+    @abstractmethod
+    def incr_kv(self, key: str, by: int) -> int:
+        """Add `by` to an integer counter and return the new value."""
+
+    @abstractmethod
     def list_dose_events(
         self, parent_id: str, *, since: datetime | None = None, until: datetime | None = None
     ) -> list[DoseEvent]:

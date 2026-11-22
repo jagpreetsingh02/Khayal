@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS refills (
   status TEXT NOT NULL, requested_by TEXT NOT NULL, decided_by_member_id TEXT,
   created_at TEXT NOT NULL, decided_at TEXT, pharmacy_ref TEXT
 );
+CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sharing (
   parent_id TEXT PRIMARY KEY REFERENCES members(id), readings INTEGER NOT NULL,
   alerts INTEGER NOT NULL, medicines INTEGER NOT NULL, updated_by TEXT, updated_at TEXT
@@ -96,6 +97,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
 MIGRATIONS = [
     ("members", "consent_text_version", "TEXT"),
     ("refills", "pharmacy_ref", "TEXT"),
+    ("dose_events", "followed_up_at", "TEXT"),
+    ("outbox", "voice_text", "TEXT"),
+    ("outbox", "voice_lang", "TEXT"),
 ]
 
 # Columns stored as JSON text.
@@ -311,6 +315,44 @@ class SQLiteStore(Store):
     def add_dose_event(self, event: DoseEvent) -> DoseEvent:
         return self._insert("dose_events", event)
 
+    def mark_dose_followed_up(self, event_id: str, at: datetime) -> DoseEvent:
+        self._update("dose_events", "id", event_id, {"status": "missed", "followed_up_at": at})
+        return self._one(DoseEvent, "dose_events", "id", event_id)
+
+    def list_parents(self) -> list[Member]:
+        return self._query(Member, "SELECT * FROM members WHERE role = 'parent' ORDER BY name")
+
+    # --- kv ---
+    def get_kv(self, key: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_kv(self, key: str, value: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO kv (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+
+    def claim(self, key: str) -> bool:
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO kv (key, value) VALUES (?, ?)", (key, _ts(utcnow()))
+            )
+        return cur.rowcount == 1
+
+    def incr_kv(self, key: str, by: int) -> int:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO kv (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + ?",
+                (key, str(by), by),
+            )
+            row = self._conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+        return int(row["value"])
+
     def list_dose_events(
         self, parent_id: str, *, since: datetime | None = None, until: datetime | None = None
     ) -> list[DoseEvent]:
@@ -478,6 +520,7 @@ class SQLiteStore(Store):
 
     def reset(self) -> None:
         tables = [
+            "kv",
             "outbox",
             "audit_log",
             "sharing",

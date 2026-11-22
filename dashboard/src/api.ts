@@ -1,4 +1,5 @@
 // Typed client for the Care Circle dashboard API (backend/app/api/dashboard.py).
+import { setServerNow } from './time'
 
 export type Role = 'parent' | 'child'
 export type Category = 'readings' | 'alerts' | 'medicines'
@@ -177,6 +178,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (session) headers.set('Authorization', `Bearer ${session}`)
   if (init.body) headers.set('Content-Type', 'application/json')
   const res = await fetch(`/api${path}`, { ...init, headers })
+  const demoNow = res.headers.get('X-Demo-Now')
+  if (demoNow) setServerNow(Date.parse(demoNow))
   if (!res.ok) {
     let message = res.statusText
     try {

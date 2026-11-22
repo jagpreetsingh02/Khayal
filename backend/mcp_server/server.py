@@ -32,6 +32,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from pydantic import BaseModel, Field
 
+from app import clock as app_clock
 from app.alerts.evaluate import evaluate_for_alert
 from app.alerts.notifier import Notifier, StoreNotifier
 from app.alerts.thresholds import (
@@ -86,6 +87,7 @@ class AuditMiddleware(Middleware):
 
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         store: Store = self._store_of()
+        app_clock.sync_from(store)  # the API may have advanced the demo clock
         name = context.message.name
         args = context.message.arguments or {}
         parent_id = None
@@ -273,7 +275,7 @@ def create_server(
                 raise ToolError("No alert before the parent confirms the reading.")
             evaluation = evaluate_for_alert(s, reading, clock())
         else:
-            today = local_today(TZ)
+            today = local_today(TZ, clock())
             day_start = datetime.combine(today, datetime.min.time(), ZoneInfo(TZ))
             doses = s.list_dose_events(parent.id, since=day_start, until=day_start + timedelta(1))
             evaluation = evaluate_missed_doses(doses, today, t, TZ)
@@ -298,6 +300,18 @@ def create_server(
             }
 
         recent = s.list_alerts(parent.id, since=clock() - timedelta(days=1))
+        if not reading_id:  # missed-doses rule: at most one alert per (IST) day
+            today = local_today(TZ, clock())
+            dup = next(
+                (
+                    a
+                    for a in recent
+                    if a.reading_id is None and local_today(TZ, a.created_at) == today
+                ),
+                None,
+            )
+            if dup:
+                return {"sent": False, "already_sent": True, "alert_id": dup.id}
         if reading_id:
             dup = next(
                 (a for a in recent if a.reading_id == reading_id and a.level == final.level),
@@ -310,10 +324,11 @@ def create_server(
 
         family = s.list_members(parent.family_id, role="child")
         text = f"{final.level.upper()} alert for {parent.name}: {final.reason}"
-        voice = final.level == "red" and get_settings().voice != "none"
+        # A phone call only for a RED alert on a confirmed reading (never for amber / doses).
+        call = final.level == "red" and bool(reading_id) and get_settings().call_provider != "none"
         for member in family:
             notifier.send(member, text)
-            if voice:
+            if call:
                 notifier.voice_call(member, text)
         alert = s.add_alert(
             Alert(
@@ -332,7 +347,7 @@ def create_server(
             "rule": final.rule,
             "message": text,
             "notified_member_ids": alert.notified_member_ids,
-            "voice_call": voice,
+            "voice_call": call,
             "ask_repeat": final.ask_repeat,
         }
 

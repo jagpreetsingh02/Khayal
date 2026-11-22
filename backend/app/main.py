@@ -9,17 +9,18 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from app import clock
 from app.api.simulator import router as simulator_router
 from app.channels.service import CareCircleService, build_service
 from app.config import get_settings
 from app.demo import ensure_demo_family
 
 log = logging.getLogger(__name__)
-TICK_SECONDS = 30  # read-back expiry and the 15-minute no-repeat amber
+TICK_SECONDS = 30  # read-back expiry, the 15-minute no-repeat amber, and the scheduler
 DASHBOARD_DIST = Path(__file__).resolve().parents[2] / "dashboard" / "dist"
 NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Care Circle dashboard</title>
 <body style="font-family:system-ui;max-width:40rem;margin:3rem auto;padding:0 1rem">
@@ -33,14 +34,16 @@ async def _ticker(service: CareCircleService, every: float) -> None:
         await asyncio.sleep(every)
         try:
             await asyncio.to_thread(service.tick)
+            await asyncio.to_thread(service.run_scheduler)
         except Exception:
-            log.exception("timeout tick failed")
+            log.exception("tick / scheduler failed")
 
 
 def create_app(service: CareCircleService | None = None, tick_seconds: float = TICK_SECONDS):
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         svc = app.state.service = service or build_service()
+        clock.sync_from(svc.store)  # keep the demo clock across restarts
         ensure_demo_family(svc.store)
         tasks = []
         if tick_seconds:
@@ -54,8 +57,27 @@ def create_app(service: CareCircleService | None = None, tick_seconds: float = T
             with suppress(asyncio.CancelledError):
                 await task
 
-    app = FastAPI(title="Care Circle", version="0.4.0", lifespan=lifespan)
+    app = FastAPI(title="Care Circle", version="0.5.0", lifespan=lifespan)
     app.include_router(simulator_router)
+
+    @app.middleware("http")
+    async def demo_clock_header(request: Request, call_next):
+        response = await call_next(request)
+        # The dashboard shows "5 min ago" against this, so it follows "advance time".
+        from app.storage.models import utcnow
+
+        response.headers["X-Demo-Now"] = utcnow().isoformat()
+        return response
+
+    @app.get("/voice/{name}", include_in_schema=False)
+    def voice_clip(name: str) -> FileResponse:
+        """Cached TTS audio (only files named by their hash; no paths)."""
+        from app.voice.tts import CLIP_NAME
+
+        path = Path(get_settings().voice_cache_dir) / name
+        if not CLIP_NAME.match(name) or not path.is_file():
+            raise HTTPException(404, "No such voice note")
+        return FileResponse(path, media_type="audio/mpeg")
 
     from app.api.dashboard import public as dashboard_login
     from app.api.dashboard import router as dashboard_router

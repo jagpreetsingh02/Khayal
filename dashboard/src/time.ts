@@ -9,6 +9,14 @@ const day = fmt({ day: 'numeric', month: 'short' })
 const dayKey = fmt({ year: 'numeric', month: '2-digit', day: '2-digit' })
 const weekday = fmt({ weekday: 'short', day: 'numeric', month: 'short' })
 
+// The server's clock may run ahead in the demo ("advance time" in the simulator); every
+// API response says what time it is there, and "x min ago" / "Today" use that.
+let skewMs = 0
+export function setServerNow(ms: number): void {
+  if (!Number.isNaN(ms)) skewMs = ms - Date.now()
+}
+export const nowMs = () => Date.now() + skewMs
+
 export const istTime = (iso: string) => time.format(new Date(iso))
 export const istDay = (iso: string | number) => day.format(new Date(iso))
 export const istWeekday = (iso: string | number) => weekday.format(new Date(iso))
@@ -16,8 +24,8 @@ export const istWeekday = (iso: string | number) => weekday.format(new Date(iso)
 /** "Today, 8:15 am" / "Yesterday, 7:30 pm" / "18 Nov, 8:15 am" (IST). */
 export function istWhen(iso: string): string {
   const d = new Date(iso)
-  const today = dayKey.format(new Date())
-  const yesterday = dayKey.format(new Date(Date.now() - 86_400_000))
+  const today = dayKey.format(new Date(nowMs()))
+  const yesterday = dayKey.format(new Date(nowMs() - 86_400_000))
   const key = dayKey.format(d)
   const label = key === today ? 'Today' : key === yesterday ? 'Yesterday' : day.format(d)
   return `${label}, ${time.format(d)}`
@@ -25,7 +33,7 @@ export function istWhen(iso: string): string {
 
 /** "5 min ago", "3 h ago", "2 days ago". */
 export function ago(iso: string): string {
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  const s = Math.max(0, (nowMs() - new Date(iso).getTime()) / 1000)
   if (s < 60) return 'just now'
   if (s < 3600) return `${Math.floor(s / 60)} min ago`
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`

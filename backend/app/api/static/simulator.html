@@ -91,6 +91,32 @@
             background: var(--red-bg); color: var(--red); border: 1px solid #f5c2c2; }
   .banner.show { display: block; }
   .banner code { background: #fff; padding: 1px 5px; border-radius: 4px; }
+  .voice { display: flex; align-items: center; gap: 8px; margin: 2px 0 4px; }
+  .voice button.play { width: 30px; height: 30px; border-radius: 50%; padding: 0; border: 0;
+                       background: var(--accent); color: #fff; font-size: 13px; flex: none; }
+  .voice .wave { flex: 1; height: 18px; min-width: 90px; border-radius: 4px;
+                 background: repeating-linear-gradient(90deg, #128c7e55 0 3px, transparent 3px 6px); }
+  .voice small { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .voice-text { font-size: 12px; color: var(--muted); font-style: italic; margin-bottom: 2px; }
+  .transcript { font-size: 12px; color: var(--muted); font-style: italic; }
+  .callcard { align-self: stretch; background: #0b3d36; color: #fff; border-radius: 12px;
+              padding: 12px; display: grid; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  .callcard .ring { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .callcard .ring::before { content: "📞"; font-size: 18px; animation: ring 1.2s infinite; }
+  @keyframes ring { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-15deg); }
+                    75% { transform: rotate(15deg); } }
+  @media (prefers-reduced-motion: reduce) { .callcard .ring::before { animation: none; } }
+  .callcard .script { font-size: 13px; opacity: .92; }
+  .callcard .voice small { color: #cfe; }
+  .callcard time { color: #cfe; font-size: 10px; text-align: right; }
+  .clockbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .clock { font-variant-numeric: tabular-nums; }
+  button.rec { color: var(--red); }
+  button.rec.on { background: var(--red); color: #fff; border-color: var(--red); }
+  .vsamples { display: none; padding: 8px 10px; gap: 6px; flex-wrap: wrap;
+              border-top: 1px solid var(--line); background: var(--code); }
+  .vsamples.show { display: flex; }
+  .vsamples button { font-size: 12px; border-radius: 999px; padding: 4px 10px; }
   @media (max-width: 760px) {
     main { grid-template-columns: 1fr; padding: 12px; }
     .parent .chat { height: 52vh; }
@@ -103,7 +129,15 @@
   <span class="badge" id="mode">mode …</span>
   <span class="badge" id="reader">reader …</span>
   <span class="badge" id="mcp"><span class="dot"></span>MCP …</span>
+  <span class="badge" id="voiceinfo">voice …</span>
   <span class="spacer"></span>
+  <span class="clockbar">
+    <span class="badge clock" id="clock" title="Demo clock (India time)">🕒 …</span>
+    <button id="next" title="Jump the demo clock to the next medicine reminder">⏰ Next reminder</button>
+    <button data-adv="30" title="Advance the demo clock 30 minutes (follow-up after no reply)">⏩ 30 min</button>
+    <button data-adv="1440" title="Advance the demo clock one day">⏩ 1 day</button>
+    <button id="weekly" title="Send this week's summary to the family now">📊 Weekly summary</button>
+  </span>
   <button id="skip" title="Pretend 5 minutes passed (repeat-reading wait)">⏩ Skip 5 minutes</button>
   <button id="reset" title="Wipe the demo database and start again">Reset demo</button>
 </header>
@@ -121,8 +155,11 @@
       <button data-say="START">START</button><button data-say="help">help</button>
     </div>
     <div class="samples" id="samples"></div>
+    <div class="vsamples" id="vsamples"></div>
     <form class="compose" id="compose">
       <button type="button" id="pick" title="Send a sample photo">🖼️</button>
+      <button type="button" id="vpick" title="Send a sample voice note">🗣️</button>
+      <button type="button" id="rec" class="rec" title="Record a voice note (tap again to send)">🎤</button>
       <button type="button" id="attach" title="Upload your own photo">📎</button>
       <input type="file" id="file" accept="image/*" hidden>
       <input type="text" id="text" placeholder="Message (or caption for a photo)" autocomplete="off">
@@ -152,7 +189,26 @@ function el(tag, cls, text) {
   return e;
 }
 function hhmm(iso) {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit",
+                                                     timeZone: "Asia/Kolkata" });
+}
+const LANG = { hi: "hi-IN", ta: "ta-IN", en: "en-IN" };
+const LANG_NAME = { hi: "Hindi", ta: "Tamil", en: "English" };
+function speak(item) {
+  if (item.audio_url) { new Audio(item.audio_url).play(); return; }
+  if (!("speechSynthesis" in window)) { alert(item.voice_text); return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(item.voice_text || item.text);
+  u.lang = LANG[item.voice_lang] || "en-IN";
+  speechSynthesis.speak(u);
+}
+function voiceRow(item) {
+  const row = el("div", "voice");
+  const b = el("button", "play", "▶"); b.type = "button"; b.title = "Play voice note";
+  b.onclick = (ev) => { ev.stopPropagation(); speak(item); };
+  const src = item.audio_url ? "ElevenLabs" : "browser voice · mock";
+  row.append(b, el("span", "wave"), el("small", null, (LANG_NAME[item.voice_lang] || "") + " · " + src));
+  return row;
 }
 function level(text) {
   if (!text) return "";
@@ -170,14 +226,28 @@ function renderFeed(box, key, feed, emptyText) {
   if (!feed.length) { box.append(el("div", "empty", emptyText)); return; }
   for (const item of feed) {
     if (item.direction === "note") { box.append(el("div", "note", item.text)); continue; }
+    if (item.kind === "voice_call") {
+      const card = el("div", "callcard");
+      card.append(el("div", "ring", "Incoming call · Care Circle"), el("div", "script", item.text),
+                  voiceRow(item), el("time", null, hhmm(item.at) + (item.audio_url ? "" : " · simulated call")));
+      box.append(card);
+      continue;
+    }
     const m = el("div", "msg " + item.direction + level(item.text));
+    if (item.direction === "in" && item.voice) {
+      m.append(el("div", null, "🎤 Voice note"));
+      m.append(el("div", "transcript", item.transcript ? "“" + item.transcript + "”" : "transcribing…"));
+    }
+    if (item.direction === "out" && item.voice) {
+      m.append(voiceRow(item));
+      if (item.voice_text && item.voice_text !== item.text) m.append(el("div", "voice-text", "🔊 " + item.voice_text));
+    }
     if (item.photo) {
       const src = item.sample ? "/simulator/samples/" + encodeURIComponent(item.sample)
                               : previews[item.client_id];
       if (src) { const img = el("img"); img.src = src; img.alt = "photo"; m.append(img); }
       else m.append(el("div", null, "📷 Photo"));
     }
-    if (item.kind === "voice_call") m.append(el("div", null, "📞 Voice call: "));
     if (item.text) m.append(el("div", null, item.text));
     m.append(el("time", null, hhmm(item.at)));
     box.append(m);
@@ -266,6 +336,13 @@ async function refresh() {
     $("mode").textContent = "APP_MODE " + s.info.app_mode;
     $("reader").textContent = "reader: " + s.info.reader + " · agent: " + s.info.agent;
     $("ai-sub").textContent = "MCP tool calls (" + s.info.mcp_transport + (s.info.mcp_url ? " · " + s.info.mcp_url : "") + "), from audit_log, newest first";
+    $("voiceinfo").textContent = "voice: " + s.info.voice + " · stt: " + s.info.stt + " · calls: " + s.info.calls;
+    const now = new Date(s.clock.now);
+    const off = s.clock.offset_minutes;
+    $("clock").textContent = "🕒 " + now.toLocaleString("en-IN", { weekday: "short", day: "numeric",
+        month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }) + " IST"
+        + (off ? " · demo +" + (off >= 60 ? Math.floor(off / 60) + " h " : "") + (off % 60) + " min" : "");
+    $("next").disabled = s.clock.next_reminder_minutes == null;
   } catch (e) { /* server restarting: try again next tick */ }
 }
 
@@ -297,7 +374,9 @@ async function post(path, body) {
 function setBusy(on, label) {
   busy = on;
   $("typing").textContent = on ? (label || "Care Circle is typing…") : "";
-  for (const b of document.querySelectorAll("#compose button, .quick button, #samples button")) b.disabled = on;
+  for (const b of document.querySelectorAll("#compose button, .quick button, #samples button, #vsamples button")) {
+    if (b.id !== "rec" || !recorder) b.disabled = on;
+  }
 }
 
 async function send(body, label) {
@@ -354,6 +433,68 @@ async function loadSamples() {
 }
 $("pick").onclick = () => $("samples").classList.toggle("show");
 
+async function loadVoiceSamples() {
+  const box = $("vsamples");
+  const list = await (await fetch("/simulator/voice-samples")).json();
+  box.replaceChildren(el("small", null, "Say (mock voice notes):"));
+  for (const v of list) {
+    const b = el("button", null, "🎤 “" + v.transcript + "”"); b.type = "button";
+    b.onclick = () => { box.classList.remove("show"); send({ voice_sample: v.name }, "Listening…"); };
+    box.append(b);
+  }
+}
+$("vpick").onclick = () => $("vsamples").classList.toggle("show");
+
+// Voice-note recorder (browser MediaRecorder). With VOICE=elevenlabs the audio goes to Scribe;
+// in mock mode it is honestly "not understood" (use the sample voice notes instead).
+let recorder = null, chunks = [], recTimer = null, recStart = 0;
+$("rec").onclick = async () => {
+  if (recorder) { recorder.stop(); return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder) { alert("This browser cannot record audio."); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { alert("Microphone not available: " + e.message); return; }
+  chunks = [];
+  recorder = new MediaRecorder(stream);
+  recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  recorder.onstop = () => {
+    stream.getTracks().forEach((t) => t.stop());
+    clearInterval(recTimer);
+    const mime = recorder.mimeType || "audio/webm";
+    recorder = null;
+    $("rec").classList.remove("on"); $("rec").textContent = "🎤";
+    const blob = new Blob(chunks, { type: mime });
+    if (!blob.size) return;
+    const reader = new FileReader();
+    reader.onload = () => send({ audio_b64: String(reader.result).split(",")[1], audio_mime: mime }, "Listening…");
+    reader.readAsDataURL(blob);
+  };
+  recorder.start();
+  recStart = Date.now();
+  $("rec").classList.add("on");
+  recTimer = setInterval(() => {
+    const secs = Math.round((Date.now() - recStart) / 1000);
+    $("rec").textContent = "⏺ " + secs + "s · send";
+    if (secs >= 60) recorder && recorder.stop();
+  }, 250);
+};
+
+async function advance(body, label) {
+  const buttons = document.querySelectorAll(".clockbar button");
+  buttons.forEach((b) => (b.disabled = true));
+  $("typing").textContent = label;
+  try { await post("/simulator/api/advance", body); } catch (e) { alert(e.message); }
+  finally { buttons.forEach((b) => (b.disabled = false)); $("typing").textContent = ""; refresh(); }
+}
+$("next").onclick = () => advance({ to: "next_reminder" }, "Jumping to the next reminder…");
+for (const b of document.querySelectorAll("[data-adv]")) {
+  b.onclick = () => advance({ minutes: Number(b.dataset.adv) }, "Time passes…");
+}
+$("weekly").onclick = async () => {
+  try { await post("/simulator/api/weekly-summary"); } catch (e) { alert(e.message); }
+  refresh();
+};
+
 $("skip").onclick = async () => {
   $("skip").disabled = true;
   try { await post("/simulator/api/skip", { minutes: 5 }); } catch (e) { alert(e.message); }
@@ -368,6 +509,7 @@ $("reset").onclick = async () => {
 };
 
 loadSamples();
+loadVoiceSamples();
 refresh();
 checkMcp();
 setInterval(refresh, 1200);

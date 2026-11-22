@@ -24,7 +24,10 @@ Actor = Literal["agent", "member", "system"]
 
 
 def utcnow() -> datetime:
-    return datetime.now(UTC)
+    """Now (UTC) on the app clock: real time plus the demo offset (see app/clock.py)."""
+    from app import clock
+
+    return datetime.now(UTC) + clock.offset()
 
 
 def new_id(prefix: str) -> str:
@@ -86,7 +89,10 @@ class DoseEvent(BaseModel):
     medicine_id: str
     due_at: datetime
     status: DoseStatus = "pending"
-    responded_at: datetime | None = None
+    responded_at: datetime | None = None  # the parent's own reply (None if never answered)
+    # Set when the scheduler marked it missed after 30 min and sent the one gentle follow-up;
+    # a later "1" still counts as taken.
+    followed_up_at: datetime | None = None
 
 
 class Threshold(BaseModel):
@@ -167,5 +173,8 @@ class OutboxMessage(BaseModel):
     member_id: str
     kind: Literal["message", "voice_call"] = "message"
     text: str
+    # Optional voice note: a short phrase in the member's language (see app/voice/phrases.py).
+    voice_text: str | None = None
+    voice_lang: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     delivered_at: datetime | None = None
