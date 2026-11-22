@@ -21,8 +21,9 @@ Run from `backend/` so they use its environment and `DATABASE_URL`.
   `uv run python ../scripts/chat_demo.py --demo`
 - `accuracy_test.py`: exact-match accuracy of a reader against `samples/labels.json`, per field
   and overall, with every failure listed. `--reader groq` for the real model, `--real-only` to
-  skip synthetic samples. Label format: `samples/README.md`.
-  `uv run python ../scripts/accuracy_test.py --reader groq`
+  skip synthetic samples. Label format: `samples/README.md`. A real reader first prints a
+  token estimate and asks to continue (`--yes` to skip; no terminal = stop), then prints the
+  tokens the API reported. `uv run python ../scripts/accuracy_test.py --reader groq`
 - `screenshots.py` (dev only): plays the golden path against the running demo and saves
   README screenshots to `docs/screenshots/` with headless Chrome. Playwright is not a project
   dependency: `uv run --with playwright python ../scripts/screenshots.py`

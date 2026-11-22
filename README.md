@@ -190,17 +190,23 @@ running (dev-only; uses your installed Chrome).
 ```bash
 # from backend/
 uv run pytest                                      # backend tests + dashboard build/lint check
+RUN_LIVE_TESTS=1 uv run pytest -m live             # opt-in: real API tests (spends your quota)
 uv run ruff check . && uv run ruff format --check .
 uv run python ../scripts/start.py                  # keep the current database
 uv run python ../scripts/seed_demo.py              # reseed (stop the servers first)
 uv run python ../scripts/mcp_client_demo.py        # list MCP tools, call log_reading
 uv run python ../scripts/chat_demo.py --demo       # the conversation in the terminal
-uv run python ../scripts/accuracy_test.py          # reader accuracy on samples/
+uv run python ../scripts/accuracy_test.py          # reader accuracy on samples/ (mock)
+uv run python ../scripts/accuracy_test.py --reader groq   # real photos: warns, estimates tokens, asks
 
 # from dashboard/ (hot reload on http://localhost:5173/dashboard/, /api proxied to :8000)
 npm run dev
 npm run lint
 ```
+
+**Tests make zero real API calls by default.** `tests/conftest.py` forces mock providers
+(whatever your `.env` says) and blocks any non-localhost network connection. Tests that call
+real APIs are marked `live` and run only with `RUN_LIVE_TESTS=1`.
 
 Dashboard API (all routes need the demo session): `GET /api/parents/{id}/readings?range=14d`,
 `GET /api/alerts` + `POST /api/alerts/{id}/acknowledge`, `GET /api/refills?status=…`,
