@@ -2,8 +2,9 @@
 
 Rules enforced here:
 - Parent-first sharing (§6.5): a child sees only the categories the parent shared
-  (readings / alerts / medicines); only the parent changes them. Nothing is shared while
-  consent is pending or revoked.
+  (readings / alerts / medicines); only the parent changes them. Exception: red alerts always
+  reach the family, so children see red alerts even when alerts are not shared. Nothing is
+  shared while consent is pending or revoked.
 - Refill approval exists ONLY here (POST /api/refills/{id}/approve|reject), after a family
   member's click; the AI has no approve tool. Deciding twice is safe (idempotent).
 - Limits are edited as "set by your doctor" and validated; every family action is written
@@ -106,12 +107,24 @@ def _parent(store: Store, me: Member, parent_id: str) -> Member:
     return parent
 
 
+def _consented(me: Member, parent: Member) -> bool:
+    """Nothing is shared before consent, or after it is withdrawn (the parent sees all)."""
+    return me.id == parent.id or parent.consent_status in ("granted", "paused")
+
+
 def _can_see(store: Store, me: Member, parent: Member, category: ShareCategory) -> bool:
     if me.id == parent.id:
         return True  # the parent always sees their own data
-    if parent.consent_status not in ("granted", "paused"):
-        return False  # nothing is shared before consent, or after it is withdrawn
+    if not _consented(me, parent):
+        return False
     return store.get_sharing(parent.id).allows(category)
+
+
+def _alert_visible(store: Store, me: Member, parent: Member, alert) -> bool:
+    """Red alerts always reach the family; amber only if the parent shares alerts."""
+    if alert.level == "red":
+        return _consented(me, parent)
+    return _can_see(store, me, parent, "alerts")
 
 
 def _require(store: Store, me: Member, parent: Member, category: ShareCategory) -> None:
@@ -290,10 +303,14 @@ def overview(parent_id: str, request: Request, me: Me):
         out["pending_refills"] = [
             _refill(store, r) for r in store.list_refills(parent.id, status="pending_approval")
         ]
-    if _can_see(store, me, parent, "alerts"):
-        since = utcnow() - timedelta(days=7)
-        alerts = store.list_alerts(parent.id, since=since)
-        out["active_alerts"] = [_alert(store, a) for a in reversed(alerts) if not a.acknowledged_at]
+    since = utcnow() - timedelta(days=7)
+    alerts = [
+        a
+        for a in reversed(store.list_alerts(parent.id, since=since))
+        if not a.acknowledged_at and _alert_visible(store, me, parent, a)
+    ]
+    out["active_alerts"] = [_alert(store, a) for a in alerts]
+    out["alerts_shared"] = _can_see(store, me, parent, "alerts")  # False: red alerts only
     return out
 
 
@@ -320,13 +337,16 @@ def alerts(
 ) -> dict[str, Any]:
     store = _store(request)
     if parent_id:
-        parent = _parent(store, me, parent_id)
-        _require(store, me, parent, "alerts")
-        parents = [parent]
+        parents = [_parent(store, me, parent_id)]
     else:
-        parents = _visible_parents(store, me, "alerts")
+        parents = store.list_members(me.family_id, role="parent")
     since = utcnow() - timedelta(days=max(1, min(days, 365)))
-    rows = [a for p in parents for a in store.list_alerts(p.id, since=since)]
+    rows = [
+        a
+        for p in parents
+        for a in store.list_alerts(p.id, since=since)
+        if _alert_visible(store, me, p, a)  # red always; amber only if shared
+    ]
     rows.sort(key=lambda a: a.created_at, reverse=True)
     return {"alerts": [_alert(store, a) for a in rows]}
 
@@ -339,7 +359,8 @@ def acknowledge(alert_id: str, request: Request, me: Me):
     except NotFoundError as exc:
         raise HTTPException(404, "Alert not found.") from exc
     parent = _parent(store, me, alert.parent_id)
-    _require(store, me, parent, "alerts")
+    if not _alert_visible(store, me, parent, alert):
+        raise HTTPException(403, f"{parent.name} has not shared alerts with the family.")
     changed = alert.acknowledged_at is None
     alert = store.acknowledge_alert(alert_id, me.id)
     changed = changed and alert.acknowledged_by == me.id
@@ -607,6 +628,8 @@ def audit(
         category = TOOL_CATEGORY.get(e.tool)
         parent = by_id[e.parent_id]  # type: ignore[index]
         shown = category is None or _can_see(store, me, parent, category)
+        if not shown and e.tool == "alert_family" and _consented(me, parent):
+            shown = json.loads(e.result_json).get("level") == "red"  # red always reaches family
         result = json.loads(e.result_json) if shown else None
         return {
             "id": e.id,
