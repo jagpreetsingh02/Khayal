@@ -89,6 +89,13 @@ NO_REPEAT_NOT_REACHED = (
     "still send the repeat reading. " + EMERGENCY
 )
 
+# Refill status (the order itself never happens in chat, brief §3).
+LOW_STOCK_ASKED = (
+    "Your {brand} is running low ({stock} left). I have asked your family to approve a refill."
+)
+REFILL_APPROVED = "Refill approved for {brand} ({qty}); your pharmacy will confirm."
+REFILL_DECLINED = "Your family did not approve the refill for {brand} this time."
+
 STRIP_READ_BACK = "{name} = {generic}. Remind at 8 PM? Reply 1 yes / 2 no"
 STRIP_UNREADABLE = "I could not read the medicine name. " + (
     "Please send a clear photo of the side of the strip with the name and strength."

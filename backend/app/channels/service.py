@@ -74,6 +74,13 @@ class CareCircleService:
         self.deliver(out)
         return out
 
+    def flush_outbox(self) -> list[Outgoing]:
+        """Deliver messages written to the outbox (e.g. by the dashboard API) right away."""
+        with self._lock:
+            out = self.engine.drain_outbox()
+        self.deliver(out)
+        return out
+
     def deliver(self, messages: list[Outgoing]) -> None:
         for msg in messages:
             channel = self.channels.get(msg.channel)

@@ -87,7 +87,7 @@ class ConversationEngine:
         if member.role != "parent":
             return [self._to(member, tpl.NOT_A_PARENT)]
         texts = self._handle_parent(member, msg, now)
-        return [self._to(member, t) for t in texts] + self._drain_family()
+        return [self._to(member, t) for t in texts] + self.drain_outbox()
 
     def expire_stale(self, member_id: str, now: datetime | None = None) -> list[Outgoing]:
         """Apply timeouts for one parent without an incoming message."""
@@ -95,7 +95,7 @@ class ConversationEngine:
         if member.consent_status != "granted":
             return []
         texts = self._due(member, now or self.clock())
-        return [self._to(member, t) for t in texts] + self._drain_family()
+        return [self._to(member, t) for t in texts] + self.drain_outbox()
 
     def tick(self, now: datetime | None = None) -> list[Outgoing]:
         """Timeouts for every parent (run every ~30 s): unanswered read-backs expire, and a
@@ -105,7 +105,7 @@ class ConversationEngine:
         for state in self.store.list_conversation_states():
             if state.payload.get("expires_at") or state.payload.get("repeat"):
                 out += self.expire_stale(state.member_id, now)
-        return out + self._drain_family()
+        return out + self.drain_outbox()
 
     def dose_reminder(self, member_id: str, medicine_ids: list[str]) -> Outgoing | None:
         """The reminder text the scheduler sends (Phase 5); replies are handled here.
@@ -477,7 +477,7 @@ class ConversationEngine:
             channel=member.channel, to_ref=member.channel_ref, member_id=member.id, text=text
         )
 
-    def _drain_family(self) -> list[Outgoing]:
+    def drain_outbox(self) -> list[Outgoing]:
         """Messages the MCP server wrote for family members (it may be another process)."""
         out = []
         for m in self.store.take_outbox():

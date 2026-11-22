@@ -226,7 +226,9 @@ function renderAudit(rows) {
                  + (wasInit && !seen.has(row.id) ? " fresh" : ""));
     c.dataset.id = row.id;
     const head = el("div");
-    head.append(el("span", "tool", row.tool + "()"), el("span", "when", hhmm(row.at)));
+    const label = row.actor === "agent" ? row.tool + "()"
+      : (row.actor === "member" ? "👤 family · " : "⚙️ system · ") + row.tool;
+    head.append(el("span", "tool", label), el("span", "when", hhmm(row.at)));
     c.append(head, el("div", "sum", summarize(row)),
              el("pre", null, "args:\n" + JSON.stringify(row.args, null, 2) +
                              "\n\nresult:\n" + JSON.stringify(row.result, null, 2)));

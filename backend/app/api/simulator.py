@@ -57,6 +57,7 @@ def _audit_row(entry) -> dict[str, Any]:
     return {
         "id": entry.id,
         "at": entry.created_at.isoformat(),
+        "actor": entry.actor,
         "tool": entry.tool,
         "args": load(entry.args_json),
         "result": result,

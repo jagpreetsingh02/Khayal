@@ -200,3 +200,112 @@ def evaluate_missed_doses(
 
 def local_today(tz: str = "Asia/Kolkata", now: datetime | None = None) -> date:
     return (now or datetime.now(ZoneInfo(tz))).astimezone(ZoneInfo(tz)).date()
+
+
+# --- Editing limits on the dashboard ("set by your doctor") ---
+# Each editable limit: label, unit and the range we accept. The ranges only catch typing
+# mistakes (e.g. 14 instead of 140); the values themselves are the doctor's decision.
+class ThresholdSpec(BaseModel):
+    rule: str
+    label: str
+    unit: str
+    min: float
+    max: float
+    integer: bool = False
+
+
+THRESHOLD_SPECS: dict[str, ThresholdSpec] = {
+    s.rule: s
+    for s in (
+        ThresholdSpec(
+            rule="bp_limit_systolic",
+            label="BP limit, systolic",
+            unit="mmHg",
+            min=110,
+            max=180,
+            integer=True,
+        ),
+        ThresholdSpec(
+            rule="bp_limit_diastolic",
+            label="BP limit, diastolic",
+            unit="mmHg",
+            min=60,
+            max=110,
+            integer=True,
+        ),
+        ThresholdSpec(
+            rule="bp_severe_systolic",
+            label="Severe BP, systolic (repeat needed)",
+            unit="mmHg",
+            min=150,
+            max=220,
+            integer=True,
+        ),
+        ThresholdSpec(
+            rule="bp_severe_diastolic",
+            label="Severe BP, diastolic (repeat needed)",
+            unit="mmHg",
+            min=90,
+            max=140,
+            integer=True,
+        ),
+        ThresholdSpec(
+            rule="bp_weekly_over_limit_count",
+            label="BP readings over the limit in 7 days",
+            unit="readings",
+            min=1,
+            max=14,
+            integer=True,
+        ),
+        ThresholdSpec(
+            rule="glucose_red_below", label="Glucose red below", unit="mg/dL", min=40, max=80
+        ),
+        ThresholdSpec(
+            rule="glucose_amber_below", label="Glucose amber below", unit="mg/dL", min=50, max=110
+        ),
+        ThresholdSpec(
+            rule="glucose_amber_above", label="Glucose amber above", unit="mg/dL", min=140, max=400
+        ),
+        ThresholdSpec(
+            rule="missed_doses_per_day",
+            label="Missed doses in a day",
+            unit="doses",
+            min=1,
+            max=10,
+            integer=True,
+        ),
+    )
+}
+assert set(THRESHOLD_SPECS) == set(DEFAULT_THRESHOLDS)
+
+
+def validate_threshold_update(current: dict[str, float], changes: dict[str, float]) -> list[str]:
+    """Problems with applying `changes` on top of `current` effective limits ([] = fine)."""
+    problems: list[str] = []
+    for rule, value in changes.items():
+        spec = THRESHOLD_SPECS.get(rule)
+        if spec is None:
+            problems.append(f"Unknown limit {rule!r}.")
+            continue
+        if not spec.min <= value <= spec.max:
+            problems.append(
+                f"{spec.label} must be between {spec.min:g} and {spec.max:g} {spec.unit}."
+            )
+        elif spec.integer and value != int(value):
+            problems.append(f"{spec.label} must be a whole number.")
+    if problems:
+        return problems
+    v = current | changes
+    pairs = (
+        ("glucose_red_below", "glucose_amber_below"),
+        ("glucose_amber_below", "glucose_amber_above"),
+        ("bp_limit_systolic", "bp_severe_systolic"),
+        ("bp_limit_diastolic", "bp_severe_diastolic"),
+    )
+    for low, high in pairs:
+        if v[low] >= v[high]:
+            problems.append(
+                f"{THRESHOLD_SPECS[low].label} ({v[low]:g}) must be lower than "
+                f"{THRESHOLD_SPECS[high].label} ({v[high]:g})."
+            )
+    return problems
