@@ -26,6 +26,9 @@ dashboard/dist/
 *.log
 npm-debug.log*
 
+# Voice note cache (TTS audio)
+.voice_cache/
+
 # Databases
 *.db
 *.db-shm
