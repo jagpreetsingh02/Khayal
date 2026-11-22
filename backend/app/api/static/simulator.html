@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Care Circle Simulator</title>
+<style>
+  :root {
+    --bg: #eef1ef; --panel: #ffffff; --ink: #1d2521; --muted: #64706a; --line: #d9dfdb;
+    --wa-head: #075e54; --wa-chat: #efe7de; --wa-in: #ffffff; --wa-out: #d9fdd3;
+    --amber: #b7791f; --amber-bg: #fff6e0; --red: #c53030; --red-bg: #fde8e8;
+    --accent: #128c7e; --code: #f5f7f6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         color: var(--ink); background: var(--bg); }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 16px;
+           background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 17px; margin: 0 8px 0 0; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--code);
+           border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px;
+         background: #aaa; vertical-align: 1px; }
+  .dot.ok { background: #2f9e44; } .dot.bad { background: var(--red); }
+  .spacer { flex: 1; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--panel); padding: 6px 12px; color: var(--ink); }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  main { display: grid; grid-template-columns: minmax(320px, 420px) minmax(260px, 1fr);
+         gap: 16px; padding: 16px; align-items: start; }
+  .phone { background: var(--panel); border-radius: 18px; overflow: hidden;
+           border: 1px solid var(--line); display: flex; flex-direction: column;
+           box-shadow: 0 2px 10px rgba(0,0,0,.05); }
+  .phone .top { background: var(--wa-head); color: #fff; padding: 10px 14px; }
+  .phone .top b { display: block; font-size: 15px; }
+  .phone .top small { opacity: .8; }
+  .chat { background: var(--wa-chat); padding: 12px; overflow-y: auto; display: flex;
+          flex-direction: column; gap: 6px; }
+  .parent .chat { height: 58vh; min-height: 360px; }
+  .child .chat { height: 26vh; min-height: 170px; }
+  .msg { max-width: 85%; padding: 6px 9px 4px; border-radius: 8px; white-space: pre-wrap;
+         word-wrap: break-word; box-shadow: 0 1px 0 rgba(0,0,0,.08); }
+  .msg time { display: block; text-align: right; font-size: 10px; color: var(--muted); }
+  .msg.out { align-self: flex-start; background: var(--wa-in); }
+  .msg.in { align-self: flex-end; background: var(--wa-out); }
+  .msg.amber { border-left: 4px solid var(--amber); background: var(--amber-bg); }
+  .msg.red { border-left: 4px solid var(--red); background: var(--red-bg); }
+  .msg img { max-width: 220px; max-height: 160px; border-radius: 6px; display: block; }
+  .note { align-self: center; font-size: 12px; color: var(--muted); background: #fff9;
+          padding: 2px 10px; border-radius: 999px; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; margin: auto; }
+  .typing { font-size: 12px; color: var(--muted); padding: 0 12px 6px; background: var(--wa-chat);
+            min-height: 20px; }
+  .hint { background: #e7f5ff; color: #1c4e80; font-size: 13px; padding: 8px 12px;
+          border-top: 1px solid var(--line); display: none; }
+  .hint.show { display: block; }
+  .quick { display: flex; gap: 6px; padding: 8px 10px 0; flex-wrap: wrap; }
+  .quick button { padding: 3px 12px; border-radius: 999px; font-size: 13px; }
+  form.compose { display: flex; gap: 6px; padding: 8px 10px 10px; align-items: center; }
+  form.compose input[type=text] { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 999px;
+         border: 1px solid var(--line); font: inherit; }
+  .family { display: grid; gap: 16px; }
+  .family-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                gap: 16px; }
+  .samples { display: none; padding: 8px 10px; gap: 8px; flex-wrap: wrap;
+             border-top: 1px solid var(--line); background: var(--code); }
+  .samples.show { display: flex; }
+  .samples button { display: flex; flex-direction: column; align-items: center; gap: 4px;
+                    padding: 4px; width: 104px; font-size: 11px; }
+  .samples img { width: 94px; height: 64px; object-fit: cover; border-radius: 4px; }
+  details.ai { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  details.ai summary { padding: 10px 14px; cursor: pointer; font-weight: 600; }
+  details.ai summary small { font-weight: 400; color: var(--muted); }
+  .ai-list { max-height: 46vh; overflow-y: auto; border-top: 1px solid var(--line); }
+  .call { padding: 8px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .call:hover { background: var(--code); }
+  .call .tool { font-family: ui-monospace, Menlo, monospace; font-weight: 600; color: var(--accent); }
+  .call.err .tool { color: var(--red); }
+  .call .when { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .call .sum { color: var(--muted); font-size: 12px; margin-top: 2px;
+               font-family: ui-monospace, Menlo, monospace; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
+  .call pre { display: none; margin: 6px 0 0; background: var(--code); padding: 8px;
+              border-radius: 6px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  .call.open pre { display: block; } .call.open .sum { display: none; }
+  .call.fresh { animation: flash 1.6s ease-out; }
+  @keyframes flash { from { background: #d3f9d8; } to { background: transparent; } }
+  .banner { margin: 12px 16px 0; padding: 10px 14px; border-radius: 10px; display: none;
+            background: var(--red-bg); color: var(--red); border: 1px solid #f5c2c2; }
+  .banner.show { display: block; }
+  .banner code { background: #fff; padding: 1px 5px; border-radius: 4px; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; padding: 12px; }
+    .parent .chat { height: 52vh; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Care Circle · simulator</h1>
+  <span class="badge" id="mode">mode …</span>
+  <span class="badge" id="reader">reader …</span>
+  <span class="badge" id="mcp"><span class="dot"></span>MCP …</span>
+  <span class="spacer"></span>
+  <button id="skip" title="Pretend 5 minutes passed (repeat-reading wait)">⏩ Skip 5 minutes</button>
+  <button id="reset" title="Wipe the demo database and start again">Reset demo</button>
+</header>
+<div class="banner" id="banner"></div>
+
+<main>
+  <section class="phone parent">
+    <div class="top"><b id="parent-name">Parent</b><small id="parent-sub">WhatsApp · Care Circle</small></div>
+    <div class="chat" id="parent-chat"><div class="empty">Say hello to start.</div></div>
+    <div class="typing" id="typing"></div>
+    <div class="hint" id="hint"></div>
+    <div class="quick">
+      <button data-say="1">1</button><button data-say="2">2</button>
+      <button data-say="haan">haan</button><button data-say="STOP">STOP</button>
+      <button data-say="START">START</button><button data-say="help">help</button>
+    </div>
+    <div class="samples" id="samples"></div>
+    <form class="compose" id="compose">
+      <button type="button" id="pick" title="Send a sample photo">🖼️</button>
+      <button type="button" id="attach" title="Upload your own photo">📎</button>
+      <input type="file" id="file" accept="image/*" hidden>
+      <input type="text" id="text" placeholder="Message (or caption for a photo)" autocomplete="off">
+      <button class="primary" id="send" type="submit">Send</button>
+    </form>
+  </section>
+
+  <section class="family">
+    <div class="family-row" id="children"></div>
+    <details class="ai" id="ai" open>
+      <summary>What the AI did <small id="ai-sub">MCP tool calls from audit_log, newest first</small></summary>
+      <div class="ai-list" id="ai-list"><div class="call"><span class="when">No tool calls yet.</span></div></div>
+    </details>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const previews = {};          // client_id -> object URL of a photo this page uploaded
+const rendered = {};          // pane key -> last seq rendered
+let lastAudit = null, busy = false, parentRef = null;
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function hhmm(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+function level(text) {
+  if (!text) return "";
+  if (text.startsWith("RED alert")) return " red";
+  if (text.startsWith("AMBER alert")) return " amber";
+  return "";
+}
+
+function renderFeed(box, key, feed, emptyText) {
+  const last = feed.length ? feed[feed.length - 1].seq : 0;
+  if (rendered[key] === last) return;
+  rendered[key] = last;
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  box.replaceChildren();
+  if (!feed.length) { box.append(el("div", "empty", emptyText)); return; }
+  for (const item of feed) {
+    if (item.direction === "note") { box.append(el("div", "note", item.text)); continue; }
+    const m = el("div", "msg " + item.direction + level(item.text));
+    if (item.photo) {
+      const src = item.sample ? "/simulator/samples/" + encodeURIComponent(item.sample)
+                              : previews[item.client_id];
+      if (src) { const img = el("img"); img.src = src; img.alt = "photo"; m.append(img); }
+      else m.append(el("div", null, "📷 Photo"));
+    }
+    if (item.kind === "voice_call") m.append(el("div", null, "📞 Voice call: "));
+    if (item.text) m.append(el("div", null, item.text));
+    m.append(el("time", null, hhmm(item.at)));
+    box.append(m);
+  }
+  if (nearBottom || feed.length < 3) box.scrollTop = box.scrollHeight;
+}
+
+function renderChildren(children) {
+  const row = $("children");
+  if (row.childElementCount !== children.length) {
+    row.replaceChildren();
+    for (const c of children) {
+      const p = el("section", "phone child");
+      const top = el("div", "top");
+      top.append(el("b", null, c.name), el("small", null, "Family · " + c.ref));
+      const chat = el("div", "chat"); chat.id = "chat-" + c.id;
+      p.append(top, chat); row.append(p);
+      rendered["c" + c.id] = undefined;
+    }
+  }
+  for (const c of children) {
+    renderFeed($("chat-" + c.id), "c" + c.id, c.feed, "Alerts and updates for " + c.name.split(" ")[0] + " appear here.");
+  }
+}
+
+function summarize(row) {
+  const a = JSON.stringify(row.args);
+  const r = row.result && typeof row.result === "object"
+    ? (row.result.error ? "error: " + row.result.error : JSON.stringify(row.result))
+    : String(row.result);
+  return a + "  →  " + r;
+}
+
+function renderAudit(rows) {
+  const first = rows.length ? rows[0].id : "";
+  if (first === lastAudit) return;
+  const seen = new Set([...document.querySelectorAll(".call[data-id]")].map((e) => e.dataset.id));
+  const wasInit = lastAudit !== null;
+  lastAudit = first;
+  const list = $("ai-list");
+  const open = new Set([...document.querySelectorAll(".call.open")].map((e) => e.dataset.id));
+  list.replaceChildren();
+  if (!rows.length) { list.append(el("div", "call", "No tool calls yet.")); return; }
+  for (const row of rows) {
+    const c = el("div", "call" + (row.error ? " err" : "") + (open.has(row.id) ? " open" : "")
+                 + (wasInit && !seen.has(row.id) ? " fresh" : ""));
+    c.dataset.id = row.id;
+    const head = el("div");
+    head.append(el("span", "tool", row.tool + "()"), el("span", "when", hhmm(row.at)));
+    c.append(head, el("div", "sum", summarize(row)),
+             el("pre", null, "args:\n" + JSON.stringify(row.args, null, 2) +
+                             "\n\nresult:\n" + JSON.stringify(row.result, null, 2)));
+    c.onclick = () => c.classList.toggle("open");
+    list.append(c);
+  }
+}
+
+function renderHint(conv) {
+  const hint = $("hint");
+  const rep = conv.payload && conv.payload.repeat;
+  let text = "";
+  if (conv.state === "awaiting_repeat" && rep) {
+    const due = new Date(rep.due_at), amber = new Date(rep.amber_at), now = new Date();
+    if (now < due) text = "Waiting for the repeat reading (due in 5 minutes). Use ⏩ Skip 5 minutes, then send the photo again.";
+    else if (!rep.amber_done && now < amber) text = "Repeat reading can be sent now. With no repeat by 15 minutes, the family gets an amber alert.";
+    else text = "Repeat reading can still be sent (within 60 minutes of the first).";
+  }
+  hint.textContent = text;
+  hint.classList.toggle("show", !!text);
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/simulator/api/state");
+    if (!r.ok) throw new Error(r.status);
+    const s = await r.json();
+    parentRef = s.parent.ref;
+    $("parent-name").textContent = s.parent.name + " (parent)";
+    $("parent-sub").textContent = "WhatsApp · " + s.parent.ref + " · consent " + s.parent.consent;
+    renderFeed($("parent-chat"), "parent", s.parent.feed, "Say hello to start.");
+    renderChildren(s.children);
+    renderAudit(s.audit);
+    renderHint(s.conversation);
+    $("mode").textContent = "APP_MODE " + s.info.app_mode;
+    $("reader").textContent = "reader: " + s.info.reader + " · agent: " + s.info.agent;
+    $("ai-sub").textContent = "MCP tool calls (" + s.info.mcp_transport + (s.info.mcp_url ? " · " + s.info.mcp_url : "") + "), from audit_log, newest first";
+  } catch (e) { /* server restarting: try again next tick */ }
+}
+
+async function checkMcp() {
+  const badge = $("mcp"), banner = $("banner");
+  try {
+    const s = await (await fetch("/simulator/api/mcp")).json();
+    badge.replaceChildren(el("span", "dot " + (s.ok ? "ok" : "bad")),
+      document.createTextNode(s.ok ? "MCP server · " + s.tools.length + " tools" : "MCP server unreachable"));
+    banner.classList.toggle("show", !s.ok);
+    if (!s.ok) {
+      banner.replaceChildren(document.createTextNode("The agent cannot reach the Care Circle MCP server, so alerts and reminders will fail. Start both with "),
+        el("code", null, "cd backend && uv run python ../scripts/start.py"), document.createTextNode(" — " + s.error));
+    }
+  } catch (e) { badge.replaceChildren(el("span", "dot bad"), document.createTextNode("MCP ?")); }
+}
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(body || {}) });
+  if (!r.ok) {
+    let detail = r.statusText;
+    try { detail = (await r.json()).detail; } catch (e) {}
+    throw new Error(detail);
+  }
+  return r.json();
+}
+
+function setBusy(on, label) {
+  busy = on;
+  $("typing").textContent = on ? (label || "Care Circle is typing…") : "";
+  for (const b of document.querySelectorAll("#compose button, .quick button, #samples button")) b.disabled = on;
+}
+
+async function send(body, label) {
+  if (busy || !parentRef) return;
+  setBusy(true, label);
+  try { await post("/simulator/api/send", { sender_ref: parentRef, ...body }); }
+  catch (e) { alert("Could not send: " + e.message); }
+  finally { setBusy(false); await refresh(); }
+}
+
+$("compose").onsubmit = (ev) => {
+  ev.preventDefault();
+  const text = $("text").value.trim();
+  if (!text) return;
+  $("text").value = "";
+  send({ text });
+};
+for (const b of document.querySelectorAll(".quick button")) b.onclick = () => send({ text: b.dataset.say });
+
+$("attach").onclick = () => $("file").click();
+$("file").onchange = () => {
+  const f = $("file").files[0];
+  $("file").value = "";
+  if (!f) return;
+  if (f.size > 10 * 1024 * 1024) { alert("Please pick a photo under 10 MB."); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const client_id = Math.random().toString(36).slice(2);
+    previews[client_id] = URL.createObjectURL(f);
+    const caption = $("text").value.trim(); $("text").value = "";
+    send({ image_b64: String(reader.result).split(",")[1], filename: f.name, client_id, text: caption || null },
+         "Reading the photo…");
+  };
+  reader.readAsDataURL(f);
+};
+
+async function loadSamples() {
+  const box = $("samples");
+  const list = await (await fetch("/simulator/samples")).json();
+  box.replaceChildren();
+  for (const s of list) {
+    const b = el("button");
+    b.type = "button";
+    b.title = s.note || s.file;
+    const img = el("img"); img.src = "/simulator/samples/" + encodeURIComponent(s.file); img.alt = s.file;
+    b.append(img, el("span", null, s.file.replace(/^synthetic_|\.jpg$/g, "").replace(/_/g, " ")));
+    b.onclick = () => {
+      box.classList.remove("show");
+      const caption = $("text").value.trim(); $("text").value = "";
+      send({ sample: s.file, text: caption || null }, "Reading the photo…");
+    };
+    box.append(b);
+  }
+}
+$("pick").onclick = () => $("samples").classList.toggle("show");
+
+$("skip").onclick = async () => {
+  $("skip").disabled = true;
+  try { await post("/simulator/api/skip", { minutes: 5 }); } catch (e) { alert(e.message); }
+  finally { $("skip").disabled = false; refresh(); }
+};
+$("reset").onclick = async () => {
+  if (!confirm("Wipe the demo database and start with a fresh family?")) return;
+  await post("/simulator/api/reset");
+  for (const k of Object.keys(rendered)) delete rendered[k];
+  lastAudit = null;
+  refresh();
+};
+
+loadSamples();
+refresh();
+checkMcp();
+setInterval(refresh, 1200);
+setInterval(checkMcp, 15000);
+</script>
+</body>
+</html>
