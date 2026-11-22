@@ -26,17 +26,18 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from pydantic import BaseModel, Field
 
+from app.alerts.evaluate import evaluate_confirmed_reading
 from app.alerts.notifier import Notifier, OutboxNotifier
 from app.alerts.thresholds import (
     LEVEL_RANK,
     Evaluation,
     effective_thresholds,
     evaluate_missed_doses,
-    evaluate_reading,
     local_today,
 )
 from app.config import get_settings
-from app.reader.rules import check_plausibility, to_mgdl
+from app.conversation.templates import RETAKE_TIPS, format_value, read_back
+from app.reader.intake import build_reading
 from app.storage import NotFoundError, Store, get_store
 from app.storage.models import Alert, AuditEntry, Member, Reading, Refill, utcnow
 from mcp_server.guardrails import AMBER_MAX_PER_DAY, REFILL_MAX_DAYS, blocked_terms
@@ -69,16 +70,6 @@ def _reading_out(r: Reading) -> dict[str, Any]:
     else:
         out |= {"glucose_mgdl": r.glucose_mgdl, "context": r.context}
     return out
-
-
-def _read_back(r: Reading) -> str:
-    if r.type == "bp":
-        value = f"{r.systolic}/{r.diastolic}"
-        if r.pulse:
-            value += f", pulse {r.pulse}"
-    else:
-        value = f"glucose {r.glucose_mgdl:g} mg/dL"
-    return f"I read {value} — correct? Reply 1 yes / 2 no"
 
 
 class AuditMiddleware(Middleware):
@@ -164,45 +155,28 @@ def create_server(store: Store | None = None, notifier: Notifier | None = None) 
         parent. It becomes confirmed only when the parent replies yes (handled by the
         server, not by a tool). Implausible values are not stored: ask for a retake."""
         parent = parent_of(ctx)
-        glucose = None
-        if type == "glucose" and values.glucose_value is not None:
-            glucose = to_mgdl(values.glucose_value, values.glucose_unit)
-        since = utcnow() - timedelta(days=30)
-        history = db().list_readings(parent.id, since=since, type=type, status="confirmed")
-        check = check_plausibility(
+        reading, check = build_reading(
+            db(),
+            parent.id,
             type,
-            systolic=values.systolic if type == "bp" else None,
-            diastolic=values.diastolic if type == "bp" else None,
-            pulse=values.pulse if type == "bp" else None,
-            glucose_mgdl=glucose,
-            history=history,
-        )
-        if not check.ok:
-            return {
-                "stored": False,
-                "problems": check.problems,
-                "ask_retake": "Please take the photo again: hold the phone straight, avoid "
-                "light reflection, and fill the frame with the screen.",
-            }
-        reading = Reading(
-            parent_id=parent.id,
-            type=type,
-            systolic=values.systolic if type == "bp" else None,
-            diastolic=values.diastolic if type == "bp" else None,
-            pulse=values.pulse if type == "bp" else None,
-            glucose_mgdl=glucose,
+            systolic=values.systolic,
+            diastolic=values.diastolic,
+            pulse=values.pulse,
+            glucose_value=values.glucose_value,
+            glucose_unit=values.glucose_unit,
             context=context,
-            status="unconfirmed",
             source=source,
             confidence=confidence,
             image_ref=image_ref,
         )
+        if reading is None:
+            return {"stored": False, "problems": check.problems, "ask_retake": RETAKE_TIPS}
         db().add_reading(reading)
         return {
             "stored": True,
             "reading_id": reading.id,
             "status": reading.status,
-            "read_back": _read_back(reading),
+            "read_back": read_back(format_value(reading)),
             "unusual_vs_history": check.flags,
         }
 
@@ -285,14 +259,7 @@ def create_server(store: Store | None = None, notifier: Notifier | None = None) 
                 raise ToolError(f"Reading {reading_id} not found for this parent.")
             if reading.status != "confirmed":
                 raise ToolError("No alert before the parent confirms the reading.")
-            history = s.list_readings(
-                parent.id,
-                since=reading.created_at - timedelta(days=8),
-                until=reading.created_at,
-                type=reading.type,
-                status="confirmed",
-            )
-            evaluation = evaluate_reading(reading, history, t)
+            evaluation = evaluate_confirmed_reading(s, reading)
         else:
             today = local_today(TZ)
             day_start = datetime.combine(today, datetime.min.time(), ZoneInfo(TZ))
