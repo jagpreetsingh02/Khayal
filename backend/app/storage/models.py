@@ -135,3 +135,16 @@ class AuditEntry(BaseModel):
     # Extension to §7: which parent the call acted for (resolved server-side), if any.
     parent_id: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class OutboxMessage(BaseModel):
+    """A message for a member written by the MCP server (e.g. a family alert). The MCP server
+    may run in another process, so the API picks these up from the store and delivers them
+    on the member's channel."""
+
+    id: str = Field(default_factory=lambda: new_id("out"))
+    member_id: str
+    kind: Literal["message", "voice_call"] = "message"
+    text: str
+    created_at: datetime = Field(default_factory=utcnow)
+    delivered_at: datetime | None = None

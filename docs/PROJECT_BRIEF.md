@@ -263,9 +263,15 @@ Nulls for missing fields. `legible=false` or any failed rule → ask for a retak
 | Red | Glucose < 54 mg/dL | ADA Level 2 hypoglycaemia |
 | Amber | Glucose 54–69 mg/dL | ADA Level 1 |
 | Amber | Glucose > 250 mg/dL | **illustrative, clinician-set** (no authoritative source retrieved) |
-| Red | BP ≥ 180 systolic or ≥ 120 diastolic **on a repeat reading after 5 min rest** | AHA/ACC 2025 severe hypertension |
-| Amber | First BP ≥ 180/120 (ask for repeat) or 3+ readings above limit in a week | rule |
+| — (no alert) | First BP ≥ 180/120: family **not** alerted; parent is asked to rest 5 min and repeat | rule |
+| Red | BP ≥ 180 systolic or ≥ 120 diastolic **on a confirmed repeat 5–60 min after the first** | AHA/ACC 2025 severe hypertension |
+| Amber | First BP ≥ 180/120 and **no confirmed repeat within 15 min** ("high reading, no repeat taken") | rule |
+| Amber | 3+ BP readings above the limit (140/90) in a week | rule |
 | Amber | 2+ missed doses in a day | rule |
+
+Family alert texts describe numbers against limits only (no parent instructions such as
+"please rest"); parent wording lives in the chat templates. Consent paused/revoked (§6.5):
+no logging, alerts or reminders until the parent agrees again.
 
 Why the repeat rule: a home BP telemonitoring study (JMIR 2025) found ~57% of readings
 triggered alerts; raising systolic threshold 170→180 cut alerts by 54%. Always include

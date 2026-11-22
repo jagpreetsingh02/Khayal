@@ -28,8 +28,11 @@ DEFAULT_THRESHOLDS: dict[str, float] = {
     "missed_doses_per_day": 2,
 }
 
-# Repeat-BP rule: a confirming reading must come after 5 minutes rest, within an hour.
+# Repeat-BP rule (§6.3): a first reading at/above the severe limit alerts nobody yet; the
+# parent is asked to rest and repeat. A confirming repeat 5-60 min later is red. If no repeat
+# is confirmed within 15 minutes, the family gets an amber "high reading, no repeat taken".
 BP_REPEAT_MIN = timedelta(minutes=5)
+BP_REPEAT_WAIT = timedelta(minutes=15)
 BP_REPEAT_MAX = timedelta(hours=1)
 EMERGENCY_LINE = "If you feel unwell, call 108/112."
 
@@ -37,8 +40,10 @@ EMERGENCY_LINE = "If you feel unwell, call 108/112."
 class Evaluation(BaseModel):
     level: Level = "none"
     rule: str | None = None
+    # Family-facing text (sent by alert_family): numbers against limits, no advice to the
+    # parent. Parent wording lives in app/conversation/templates.py.
     reason: str = "Within the limits set by the doctor."
-    ask_repeat: bool = False  # first severe BP: ask for a repeat reading in 5 minutes
+    ask_repeat: bool = False  # first severe BP: no alert yet, ask for a repeat reading
 
 
 def effective_thresholds(overrides: list[Threshold]) -> dict[str, float]:
@@ -109,11 +114,11 @@ def evaluate_bp(reading: Reading, history: list[Reading], t: dict[str, float]) -
                 f"({severe}). {EMERGENCY_LINE}",
             )
         return Evaluation(
-            level="amber",
+            level="none",
             rule="bp_severe_first",
             ask_repeat=True,
-            reason=f"{v} is at or above the limit set by the doctor ({severe}). "
-            "Please rest 5 minutes and take a repeat reading.",
+            reason=f"{v} is at or above the limit set by the doctor ({severe}); "
+            "waiting for a repeat reading before alerting the family.",
         )
 
     if is_over_limit_bp(reading, t):
@@ -133,6 +138,40 @@ def evaluate_bp(reading: Reading, history: list[Reading], t: dict[str, float]) -
                 f"set by the doctor ({limit}); latest {v}.",
             )
     return Evaluation()
+
+
+def evaluate_bp_no_repeat(
+    first: Reading,
+    later: list[Reading],
+    now: datetime,
+    t: dict[str, float],
+    tz: str = "Asia/Kolkata",
+) -> Evaluation:
+    """Amber when a first severe BP got no confirmed repeat within BP_REPEAT_WAIT.
+
+    `later` = the parent's confirmed BP readings taken after `first` (any order).
+    """
+    if first.type != "bp" or not is_severe_bp(first, t):
+        return Evaluation()
+    deadline = first.created_at + BP_REPEAT_WAIT
+    if now < deadline:
+        return Evaluation(
+            rule="bp_severe_first",
+            ask_repeat=True,
+            reason="Waiting for the repeat reading (the family is told only after "
+            f"{BP_REPEAT_WAIT.seconds // 60} minutes without one).",
+        )
+    if any(first.created_at < r.created_at <= deadline for r in later if r.id != first.id):
+        return Evaluation()  # a repeat was taken; it is evaluated on its own
+    severe = f"{t['bp_severe_systolic']:g}/{t['bp_severe_diastolic']:g}"
+    at = first.created_at.astimezone(ZoneInfo(tz)).strftime("%H:%M")
+    return Evaluation(
+        level="amber",
+        rule="bp_severe_no_repeat",
+        reason=f"BP {first.systolic}/{first.diastolic} at {at} was at or above the limit set "
+        f"by the doctor ({severe}). No repeat reading was taken within "
+        f"{BP_REPEAT_WAIT.seconds // 60} minutes.",
+    )
 
 
 def evaluate_reading(reading: Reading, history: list[Reading], t: dict[str, float]) -> Evaluation:

@@ -3,13 +3,16 @@
     idle --photo--> awaiting_confirmation --1--> confirmed -> agent acts
                                           --2--> awaiting_value --photo/typed--> (read back again)
                     (30 min without an answer -> reading expired, back to idle)
-    first BP at/above 180/120 confirmed -> awaiting_repeat (repeat due after 5 min rest)
+    first BP at/above 180/120 confirmed -> awaiting_repeat: nobody is alerted yet; the parent
+        rests 5 minutes and sends a repeat. Confirmed repeat still severe -> red to family.
+        No confirmed repeat 15 minutes after the first -> amber "no repeat taken" (tick()).
     medicine strip --> awaiting_med_confirmation --1--> reminder at 8 PM
                                                  --2--> awaiting_med_time --"21:30"--> reminder
 
 Rules that hold on every path:
 - Consent first (§6.5): until the parent agrees, only the consent notice is sent and photos
-  are not read. STOP pauses at any time.
+  are not read. STOP pauses at any time; while paused or revoked nothing is logged,
+  alerted or reminded (the MCP tools refuse such parents as well).
 - Nothing is confirmed and no alert fires before the parent's "1". Confirmation is written
   here, server-side, via the store; no MCP tool confirms a reading.
 - `parent_id` always comes from the sender mapping in the store, never from model output.
@@ -22,9 +25,8 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.agent.minimal import Agent, MinimalAgent
-from app.alerts.notifier import OutboxNotifier
-from app.alerts.thresholds import BP_REPEAT_MAX, BP_REPEAT_MIN
+from app.agent.rule_agent import Agent
+from app.alerts.thresholds import BP_REPEAT_MAX, BP_REPEAT_MIN, BP_REPEAT_WAIT
 from app.conversation import parse
 from app.conversation import templates as tpl
 from app.conversation.messages import Incoming, Outgoing
@@ -62,15 +64,13 @@ class ConversationEngine:
         self,
         store: Store,
         reader: Reader,
-        agent: Agent | None = None,
+        agent: Agent,
         *,
-        outbox: OutboxNotifier | None = None,
         clock: Callable[[], datetime] = utcnow,
     ) -> None:
         self.store = store
         self.reader = reader
-        self.outbox = outbox or OutboxNotifier()  # family messages sent by MCP tools
-        self.agent = agent or MinimalAgent(store, self.outbox)
+        self.agent = agent  # calls the MCP tools; family messages come back via store outbox
         self.clock = clock
 
     # --- public API ---
@@ -90,16 +90,53 @@ class ConversationEngine:
         return [self._to(member, t) for t in texts] + self._drain_family()
 
     def expire_stale(self, member_id: str, now: datetime | None = None) -> list[Outgoing]:
-        """Apply timeouts without an incoming message (for the scheduler, Phase 5)."""
+        """Apply timeouts for one parent without an incoming message."""
         member = self.store.get_member(member_id)
-        texts = self._expire(member, now or self.clock())
-        return [self._to(member, t) for t in texts]
+        if member.consent_status != "granted":
+            return []
+        texts = self._due(member, now or self.clock())
+        return [self._to(member, t) for t in texts] + self._drain_family()
 
-    def dose_reminder(self, member_id: str, medicine_ids: list[str]) -> Outgoing:
-        """The reminder text the scheduler sends (Phase 5); replies are handled here."""
+    def tick(self, now: datetime | None = None) -> list[Outgoing]:
+        """Timeouts for every parent (run every ~30 s): unanswered read-backs expire, and a
+        first severe BP without a repeat after 15 minutes sends amber to the family."""
+        now = now or self.clock()
+        out: list[Outgoing] = []
+        for state in self.store.list_conversation_states():
+            if state.payload.get("expires_at") or state.payload.get("repeat"):
+                out += self.expire_stale(state.member_id, now)
+        return out + self._drain_family()
+
+    def dose_reminder(self, member_id: str, medicine_ids: list[str]) -> Outgoing | None:
+        """The reminder text the scheduler sends (Phase 5); replies are handled here.
+        None when the parent has not agreed or has paused: no reminders then (§6.5)."""
         member = self.store.get_member(member_id)
+        if member.consent_status != "granted":
+            return None
         names = [self.store.get_medicine(m).brand for m in medicine_ids]
         return self._to(member, tpl.DOSE_REMINDER.format(names=tpl.join_names(names)))
+
+    def skip_time(self, member_id: str, minutes: float) -> list[Outgoing]:
+        """Simulator demo only: move this parent's recent data `minutes` into the past, as
+        if that much time had passed, then run the timeouts."""
+        delta = timedelta(minutes=minutes)
+        self.store.shift_parent_times(member_id, -delta)
+        state = self.store.get_conversation_state(member_id)
+
+        def shift(p: dict) -> dict:
+            out = {}
+            for k, v in p.items():
+                if isinstance(v, dict):
+                    v = shift(v)
+                elif k.endswith("_at") and isinstance(v, str):
+                    v = _iso(_ts(v) - delta)
+                out[k] = v
+            return out
+
+        self.store.set_conversation_state(
+            state.model_copy(update={"payload": shift(state.payload)})
+        )
+        return self.tick()
 
     # --- consent, stop, timeouts ---
 
@@ -122,9 +159,26 @@ class ConversationEngine:
             self.store.set_consent(parent.id, "paused", at=now)
             return [tpl.PAUSED_NOW]
 
-        out = self._expire(parent, now)
+        out = self._due(parent, now)
         state = self.store.get_conversation_state(parent.id)
         return out + self._route(parent, state, msg, t, now)
+
+    def _due(self, parent: Member, now: datetime) -> list[str]:
+        return self._missed_repeat(parent, now) + self._expire(parent, now)
+
+    def _missed_repeat(self, parent: Member, now: datetime) -> list[str]:
+        """15 minutes after a first severe BP without a confirmed repeat: amber to family."""
+        state = self.store.get_conversation_state(parent.id)
+        repeat = state.payload.get("repeat")
+        if not repeat or repeat.get("amber_done") or now < _ts(repeat["amber_at"]):
+            return []
+        if state.state == AWAITING_CONFIRMATION and state.payload.get("is_repeat"):
+            return []  # the repeat is being read back; it decides
+        reading = self.store.get_reading(repeat["first_reading_id"])
+        outcome = self.agent.after_missed_repeat(parent, reading)
+        self._save(parent, state.state, state.payload, repeat | {"amber_done": True})
+        template = tpl.NO_REPEAT_FAMILY_TOLD if outcome.alert_sent else tpl.NO_REPEAT_NOT_REACHED
+        return [template.format(value=repeat.get("value", ""))]
 
     def _expire(self, parent: Member, now: datetime) -> list[str]:
         state = self.store.get_conversation_state(parent.id)
@@ -303,10 +357,12 @@ class ConversationEngine:
         reading = self.store.set_reading_status(p["reading_id"], "confirmed", at=now)
         outcome = self.agent.after_confirmed_reading(parent, reading)
         value = p["value"]
-        if outcome.ask_repeat:  # first reading at/above the severe limit
+        if outcome.ask_repeat:  # first reading at/above the severe limit: nobody alerted yet
             repeat = {
                 "first_reading_id": reading.id,
+                "value": value,
                 "due_at": _iso(reading.created_at + BP_REPEAT_MIN),
+                "amber_at": _iso(reading.created_at + BP_REPEAT_WAIT),
                 "expires_at": _iso(reading.created_at + BP_REPEAT_MAX),
             }
             self._save(parent, AWAITING_REPEAT, {}, repeat)
@@ -416,9 +472,9 @@ class ConversationEngine:
         )
 
     def _drain_family(self) -> list[Outgoing]:
-        sent, self.outbox.outbox[:] = list(self.outbox.outbox), []
+        """Messages the MCP server wrote for family members (it may be another process)."""
         out = []
-        for m in sent:
+        for m in self.store.take_outbox():
             member = self.store.get_member(m.member_id)
             out.append(
                 Outgoing(

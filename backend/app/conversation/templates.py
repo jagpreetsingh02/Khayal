@@ -72,6 +72,14 @@ FAMILY_NOT_REACHED = (
     "just now."
 )
 RED_REPEAT = "Saved: {value}. The repeat reading is still at or above the limit your doctor set."
+NO_REPEAT_FAMILY_TOLD = (
+    "No repeat reading came after {value}, so I let your family know. You can still send the "
+    "repeat reading. " + EMERGENCY
+)
+NO_REPEAT_NOT_REACHED = (
+    "No repeat reading came after {value}. I could not reach your family just now. You can "
+    "still send the repeat reading. " + EMERGENCY
+)
 
 STRIP_READ_BACK = "{name} = {generic}. Remind at 8 PM? Reply 1 yes / 2 no"
 STRIP_UNREADABLE = "I could not read the medicine name. " + (

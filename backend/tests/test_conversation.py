@@ -4,7 +4,8 @@ from datetime import timedelta
 
 import pytest
 
-from app.agent.minimal import ReadingOutcome
+from app.agent.rule_agent import ReadingOutcome, RuleAgent
+from app.alerts.notifier import StoreNotifier
 from app.conversation import parse
 from app.conversation import templates as tpl
 from app.conversation.engine import (
@@ -22,6 +23,7 @@ from app.reader.mock_reader import MockReader
 from app.reader.schema import ImageInput, MeterReading, StripReading
 from app.storage.models import DoseEvent, Family, Medicine, Member, utcnow
 from app.storage.sqlite_store import SQLiteStore
+from mcp_server.server import create_server
 
 PARENT = "+919800000001"
 CHILD = "+919800000002"
@@ -59,8 +61,13 @@ class World:
             )
             for n, r in (("Ravi", CHILD), ("Priya", "+919800000003"))
         ]
+        # In-process MCP server sharing the fake clock (the app uses streamable HTTP).
+        server = create_server(self.store, StoreNotifier(lambda: self.store), clock=self.clock)
         self.engine = ConversationEngine(
-            self.store, reader or MockReader(), agent, clock=self.clock
+            self.store,
+            reader or MockReader(),
+            agent or RuleAgent(self.store, server),
+            clock=self.clock,
         )
 
     def send(self, text=None, photo=None, sender=PARENT):
@@ -330,8 +337,8 @@ def test_repeat_bp_flow_ends_in_red_alert(w):
     out = w.send("1")
     [ask] = w.to_parent(out)
     assert ask == tpl.REPEAT_ASK.format(value="186/122, pulse 92")
-    family = w.to_family(out)
-    assert len(family) == 2 and all(t.startswith("AMBER alert for Kamla") for t in family)
+    assert w.to_family(out) == []  # first severe reading: nobody is alerted yet
+    assert w.store.list_alerts(w.parent.id) == []
     assert w.state.state == AWAITING_REPEAT
 
     w.clock.advance(2)  # too soon: not read into a reading
@@ -347,12 +354,13 @@ def test_repeat_bp_flow_ends_in_red_alert(w):
     family = w.to_family(out)
     assert len(family) == 2 and all(t.startswith("RED alert for Kamla") for t in family)
     assert all("108/112" in t for t in family)
-    assert sorted(a.level for a in w.store.list_alerts(w.parent.id)) == ["amber", "red"]
+    assert [a.level for a in w.store.list_alerts(w.parent.id)] == ["red"]
     assert w.state.state == IDLE
+    assert w.engine.tick() == []  # repeat done: no amber later
 
-    # the alerts went through the MCP tool, audited for this parent
-    audit = w.store.list_audit(tool="alert_family")
-    assert len(audit) == 2 and all(a.parent_id == w.parent.id for a in audit)
+    # the alert went through the MCP tool, audited for this parent
+    [audit] = w.store.list_audit(tool="alert_family")
+    assert audit.parent_id == w.parent.id
 
 
 def test_repeat_bp_back_below_limit_is_not_red(w):
@@ -361,8 +369,84 @@ def test_repeat_bp_back_below_limit_is_not_red(w):
     w.clock.advance(6)
     w.say(photo="synthetic_bp_normal.jpg")
     assert w.say("1") == tpl.REPEAT_OK.format(value="132/84, pulse 74")
-    assert [a.level for a in w.store.list_alerts(w.parent.id)] == ["amber"]
+    assert w.store.list_alerts(w.parent.id) == []
     assert w.state.state == IDLE
+    w.clock.advance(20)
+    assert w.engine.tick() == []
+
+
+def test_no_repeat_in_15_minutes_sends_amber_to_family(w):
+    w.say(photo="synthetic_bp_high.jpg")
+    w.say("1")
+    w.clock.advance(14)
+    assert w.engine.tick() == []
+    w.clock.advance(2)
+    out = w.engine.tick()
+    assert w.to_parent(out) == [tpl.NO_REPEAT_FAMILY_TOLD.format(value="186/122, pulse 92")]
+    family = w.to_family(out)
+    assert len(family) == 2
+    for text in family:
+        assert text.startswith("AMBER alert for Kamla: BP 186/122 at ")
+        assert "No repeat reading was taken within 15 minutes." in text
+        assert "rest" not in text.lower() and "please" not in text.lower()  # no parent wording
+    assert [(a.level, a.reason) for a in w.store.list_alerts(w.parent.id)][0][0] == "amber"
+    assert w.engine.tick() == []  # sent once
+    assert w.state.state == AWAITING_REPEAT  # a late repeat is still accepted
+
+    w.clock.advance(4)  # 20 minutes after the first: still severe -> red
+    w.say(photo="synthetic_bp_high.jpg")
+    out = w.send("1")
+    assert all(t.startswith("RED alert for Kamla") for t in w.to_family(out))
+    assert sorted(a.level for a in w.store.list_alerts(w.parent.id)) == ["amber", "red"]
+
+
+def test_no_repeat_amber_also_fires_on_the_next_message(w):
+    w.say(photo="synthetic_bp_high.jpg")
+    w.say("1")
+    w.clock.advance(16)
+    out = w.send("hello")
+    assert w.to_parent(out)[0] == tpl.NO_REPEAT_FAMILY_TOLD.format(value="186/122, pulse 92")
+    assert len(w.to_family(out)) == 2
+
+
+def test_no_amber_while_the_repeat_is_being_read_back(w):
+    w.say(photo="synthetic_bp_high.jpg")
+    w.say("1")
+    w.clock.advance(14)
+    w.say(photo="synthetic_bp_normal.jpg")  # repeat arrives at 14 min, not yet confirmed
+    w.clock.advance(2)
+    assert w.engine.tick() == []
+    assert w.say("1") == tpl.REPEAT_OK.format(value="132/84, pulse 74")
+    w.clock.advance(5)
+    assert w.engine.tick() == []
+    assert w.store.list_alerts(w.parent.id) == []
+
+
+def test_stop_during_repeat_wait_cancels_the_amber(w):
+    w.say(photo="synthetic_bp_high.jpg")
+    w.say("1")
+    w.say("STOP")
+    w.clock.advance(16)
+    assert w.engine.tick() == []
+    assert w.store.list_alerts(w.parent.id) == []
+
+
+def test_paused_parent_gets_no_dose_reminder(w):
+    med = w.store.add_medicine(
+        Medicine(
+            parent_id=w.parent.id, brand="Telma 40", generic="T", strength="40 mg", confirmed=True
+        )
+    )
+    assert w.engine.dose_reminder(w.parent.id, [med.id]) is not None
+    w.say("STOP")
+    assert w.engine.dose_reminder(w.parent.id, [med.id]) is None
+
+
+def test_paused_parent_cannot_log_anything(w):
+    w.say("STOP")
+    assert w.say(photo="synthetic_bp_high.jpg") == tpl.PAUSED
+    assert w.say("sugar 40") == tpl.PAUSED
+    assert w.readings() == [] and w.store.list_alerts(w.parent.id) == []
 
 
 def test_repeat_window_closes_after_an_hour(w):
@@ -403,6 +487,9 @@ def test_parent_is_told_honestly_when_family_could_not_be_reached():
     class NoReachAgent:
         def after_confirmed_reading(self, parent, reading):
             return ReadingOutcome(level="amber", rule="glucose_amber_above", alert_sent=False)
+
+        def after_missed_repeat(self, parent, reading):
+            return ReadingOutcome(level="amber", alert_sent=False)
 
         def set_reminder(self, parent, medicine_id, times):
             raise RuntimeError("down")

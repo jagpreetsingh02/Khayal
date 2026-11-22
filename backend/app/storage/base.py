@@ -2,7 +2,7 @@
 without touching the MCP tools, rules or API code."""
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.storage.models import (
     Alert,
@@ -14,6 +14,7 @@ from app.storage.models import (
     Family,
     Medicine,
     Member,
+    OutboxMessage,
     Reading,
     ReadingStatus,
     ReadingType,
@@ -159,6 +160,18 @@ class Store(ABC):
     @abstractmethod
     def set_conversation_state(self, state: ConversationState) -> ConversationState: ...
 
+    @abstractmethod
+    def list_conversation_states(self) -> list[ConversationState]:
+        """All stored states (the scheduler checks them for timeouts)."""
+
+    # --- outbox (messages written by the MCP server, delivered by the API) ---
+    @abstractmethod
+    def add_outbox(self, message: OutboxMessage) -> OutboxMessage: ...
+
+    @abstractmethod
+    def take_outbox(self) -> list[OutboxMessage]:
+        """Return undelivered messages, oldest first, and mark them delivered."""
+
     # --- audit ---
     @abstractmethod
     def add_audit(self, entry: AuditEntry) -> AuditEntry: ...
@@ -166,3 +179,12 @@ class Store(ABC):
     @abstractmethod
     def list_audit(self, *, tool: str | None = None, limit: int = 100) -> list[AuditEntry]:
         """Newest first."""
+
+    # --- demo helpers (web simulator only) ---
+    def shift_parent_times(self, parent_id: str, delta: timedelta) -> None:
+        """Move a parent's readings and alerts in time ("skip 5 minutes" in the simulator)."""
+        raise NotImplementedError
+
+    def reset(self) -> None:
+        """Delete every row (simulator "reset demo")."""
+        raise NotImplementedError
