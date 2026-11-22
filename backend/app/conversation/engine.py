@@ -178,6 +178,8 @@ class ConversationEngine:
         outcome = self.agent.after_missed_repeat(parent, reading)
         self._save(parent, state.state, state.payload, repeat | {"amber_done": True})
         template = tpl.NO_REPEAT_FAMILY_TOLD if outcome.alert_sent else tpl.NO_REPEAT_NOT_REACHED
+        if outcome.not_shared:
+            template = tpl.NO_REPEAT_NOT_SHARED
         return [template.format(value=repeat.get("value", ""))]
 
     def _expire(self, parent: Member, now: datetime) -> list[str]:
@@ -372,6 +374,8 @@ class ConversationEngine:
         self._rest(parent, repeat)
         if outcome.alert_sent:
             family = "I have told your family."
+        elif outcome.not_shared:
+            family = "You chose not to share alerts, so your family was not told."
         else:
             family = "I could not reach your family just now."
 
@@ -380,6 +384,8 @@ class ConversationEngine:
             return [f"{lead.format(value=value)} {family} {tpl.EMERGENCY}"]
         if outcome.level == "amber":
             template = tpl.FAMILY_TOLD if outcome.alert_sent else tpl.FAMILY_NOT_REACHED
+            if outcome.not_shared:
+                template = tpl.FAMILY_NOT_SHARED
             return [template.format(value=value)]
         if p.get("is_repeat"):
             return [tpl.REPEAT_OK.format(value=value)]

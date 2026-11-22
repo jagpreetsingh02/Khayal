@@ -46,6 +46,7 @@ class ReadingOutcome(BaseModel):
     rule: str | None = None
     ask_repeat: bool = False
     alert_sent: bool = False
+    not_shared: bool = False  # the parent chose not to share alerts with the family
 
 
 class Agent(Protocol):
@@ -117,6 +118,7 @@ class RuleAgent:
         outcome.alert_sent = bool(
             result.get("sent") or result.get("already_sent") or result.get("suppressed")
         )
+        outcome.not_shared = bool(result.get("not_shared"))
         outcome.level = result.get("level", outcome.level)
         outcome.rule = result.get("rule", outcome.rule)
         return outcome

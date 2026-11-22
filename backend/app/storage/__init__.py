@@ -1,7 +1,7 @@
 """Storage adapters. Pick the implementation with STORAGE in .env (sqlite now, dynamodb later)."""
 
 from app.config import get_settings
-from app.storage.base import NotFoundError, Store
+from app.storage.base import ConflictError, NotFoundError, Store
 
 _store: Store | None = None
 
@@ -25,4 +25,4 @@ def set_store(store: Store | None) -> None:
     _store = store
 
 
-__all__ = ["NotFoundError", "Store", "get_store", "set_store"]
+__all__ = ["ConflictError", "NotFoundError", "Store", "get_store", "set_store"]

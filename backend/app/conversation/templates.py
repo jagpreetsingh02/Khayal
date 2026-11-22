@@ -71,10 +71,18 @@ FAMILY_NOT_REACHED = (
     "Saved: {value}. It is outside the limit your doctor set. I could not reach your family "
     "just now."
 )
+FAMILY_NOT_SHARED = (
+    "Saved: {value}. It is outside the limit your doctor set. You chose not to share alerts, "
+    "so your family was not told."
+)
 RED_REPEAT = "Saved: {value}. The repeat reading is still at or above the limit your doctor set."
 NO_REPEAT_FAMILY_TOLD = (
     "No repeat reading came after {value}, so I let your family know. You can still send the "
     "repeat reading. " + EMERGENCY
+)
+NO_REPEAT_NOT_SHARED = (
+    "No repeat reading came after {value}. You chose not to share alerts, so your family was "
+    "not told. You can still send the repeat reading. " + EMERGENCY
 )
 NO_REPEAT_NOT_REACHED = (
     "No repeat reading came after {value}. I could not reach your family just now. You can "

@@ -6,7 +6,8 @@ Guardrails built in:
 - log_reading only writes `unconfirmed` readings. Confirmation is the parent's read-back
   reply, handled server-side; there is no MCP tool that confirms a reading.
 - alert_family only fires for confirmed readings / server-evaluated rules, caps amber,
-  never caps red, and families only ever see server-written text. A first severe BP
+  never caps red, and families only ever see server-written text. Nothing is sent when
+  the parent has chosen not to share alerts (sharing settings, parent-first). A first severe BP
   alerts nobody: red needs a confirming repeat, amber needs 15 minutes without one.
 - Consent (§6.5): a parent who has not agreed, or has paused / revoked, is refused by
   every tool (nothing logged, alerted or reminded).
@@ -286,6 +287,13 @@ def create_server(
                 f"Requested {level} but the server evaluated {evaluation.level}; not sent."
             )
         final: Evaluation = evaluation  # a red evaluation is sent as red even if amber asked
+
+        if not s.get_sharing(parent.id).alerts:  # parent-first (§6.5): the parent decides
+            return {
+                "sent": False,
+                "not_shared": True,
+                "why": "The parent has chosen not to share alerts with the family.",
+            }
 
         recent = s.list_alerts(parent.id, since=clock() - timedelta(days=1))
         if reading_id:

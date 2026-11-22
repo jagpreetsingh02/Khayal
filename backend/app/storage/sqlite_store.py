@@ -8,7 +8,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from app.storage.base import NotFoundError, Store
+from app.storage.base import ConflictError, NotFoundError, Store
 from app.storage.models import (
     Alert,
     AuditEntry,
@@ -27,6 +27,7 @@ from app.storage.models import (
     RefillStatus,
     Role,
     SetBy,
+    Sharing,
     Threshold,
     utcnow,
 )
@@ -70,7 +71,11 @@ CREATE TABLE IF NOT EXISTS alerts (
 CREATE TABLE IF NOT EXISTS refills (
   id TEXT PRIMARY KEY, medicine_id TEXT NOT NULL REFERENCES medicines(id), qty INTEGER NOT NULL,
   status TEXT NOT NULL, requested_by TEXT NOT NULL, decided_by_member_id TEXT,
-  created_at TEXT NOT NULL, decided_at TEXT
+  created_at TEXT NOT NULL, decided_at TEXT, pharmacy_ref TEXT
+);
+CREATE TABLE IF NOT EXISTS sharing (
+  parent_id TEXT PRIMARY KEY REFERENCES members(id), readings INTEGER NOT NULL,
+  alerts INTEGER NOT NULL, medicines INTEGER NOT NULL, updated_by TEXT, updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS conversation_state (
   member_id TEXT PRIMARY KEY REFERENCES members(id), state TEXT NOT NULL, payload TEXT NOT NULL,
@@ -88,7 +93,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 # Columns added after a table first shipped: (table, column, SQL type). Applied on open so an
 # existing local database keeps working.
-MIGRATIONS = [("members", "consent_text_version", "TEXT")]
+MIGRATIONS = [
+    ("members", "consent_text_version", "TEXT"),
+    ("refills", "pharmacy_ref", "TEXT"),
+]
 
 # Columns stored as JSON text.
 JSON_COLUMNS = {"times", "notified_member_ids", "payload"}
@@ -296,6 +304,10 @@ class SQLiteStore(Store):
         self._update("medicines", "id", medicine_id, {"times": json.dumps(times)})
         return self.get_medicine(medicine_id)
 
+    def set_medicine_stock(self, medicine_id: str, stock_count: int) -> Medicine:
+        self._update("medicines", "id", medicine_id, {"stock_count": stock_count})
+        return self.get_medicine(medicine_id)
+
     def add_dose_event(self, event: DoseEvent) -> DoseEvent:
         return self._insert("dose_events", event)
 
@@ -335,6 +347,19 @@ class SQLiteStore(Store):
     def add_alert(self, alert: Alert) -> Alert:
         return self._insert("alerts", alert)
 
+    def get_alert(self, alert_id: str) -> Alert:
+        return self._one(Alert, "alerts", "id", alert_id)
+
+    def acknowledge_alert(self, alert_id: str, member_id: str, at: datetime | None = None) -> Alert:
+        self.get_alert(alert_id)  # NotFoundError for unknown ids
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE alerts SET acknowledged_by = ?, acknowledged_at = ? "
+                "WHERE id = ? AND acknowledged_by IS NULL",
+                (member_id, _ts(at or utcnow()), alert_id),
+            )
+        return self.get_alert(alert_id)
+
     def list_alerts(self, parent_id: str, *, since: datetime | None = None) -> list[Alert]:
         where, params = self._time_filters("created_at", since, None)
         where.insert(0, "parent_id = ?")
@@ -363,13 +388,29 @@ class SQLiteStore(Store):
     def decide_refill(
         self, refill_id: str, status: RefillStatus, member_id: str, at: datetime | None = None
     ) -> Refill:
-        self._update(
-            "refills",
-            "id",
-            refill_id,
-            {"status": status, "decided_by_member_id": member_id, "decided_at": at or utcnow()},
-        )
+        self.get_refill(refill_id)  # NotFoundError for unknown ids
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "UPDATE refills SET status = ?, decided_by_member_id = ?, decided_at = ? "
+                "WHERE id = ? AND status = 'pending_approval'",
+                (status, member_id, _ts(at or utcnow()), refill_id),
+            )
+        if cur.rowcount == 0:  # someone decided it first (or it was never pending)
+            raise ConflictError(f"Refill {refill_id} is {self.get_refill(refill_id).status}")
         return self.get_refill(refill_id)
+
+    def set_refill_pharmacy(self, refill_id: str, status: RefillStatus, ref: str) -> Refill:
+        self._update("refills", "id", refill_id, {"status": status, "pharmacy_ref": ref})
+        return self.get_refill(refill_id)
+
+    # --- sharing ---
+    def get_sharing(self, parent_id: str) -> Sharing:
+        found = self._query(Sharing, "SELECT * FROM sharing WHERE parent_id = ?", (parent_id,))
+        return found[0] if found else Sharing(parent_id=parent_id)
+
+    def set_sharing(self, sharing: Sharing) -> Sharing:
+        sharing = sharing.model_copy(update={"updated_at": sharing.updated_at or utcnow()})
+        return self._insert("sharing", sharing, upsert=True)
 
     # --- conversation state ---
     def get_conversation_state(self, member_id: str) -> ConversationState:
@@ -404,11 +445,18 @@ class SQLiteStore(Store):
     def add_audit(self, entry: AuditEntry) -> AuditEntry:
         return self._insert("audit_log", entry)
 
-    def list_audit(self, *, tool: str | None = None, limit: int = 100) -> list[AuditEntry]:
-        sql, params = "SELECT * FROM audit_log", []
+    def list_audit(
+        self, *, tool: str | None = None, parent_id: str | None = None, limit: int = 100
+    ) -> list[AuditEntry]:
+        where: list[str] = []
+        params: list[Any] = []
         if tool:
-            sql += " WHERE tool = ?"
+            where.append("tool = ?")
             params.append(tool)
+        if parent_id:
+            where.append("parent_id = ?")
+            params.append(parent_id)
+        sql = "SELECT * FROM audit_log" + (f" WHERE {' AND '.join(where)}" if where else "")
         sql += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
         params.append(limit)
         return self._query(AuditEntry, sql, tuple(params))
@@ -432,6 +480,7 @@ class SQLiteStore(Store):
         tables = [
             "outbox",
             "audit_log",
+            "sharing",
             "conversation_state",
             "refills",
             "alerts",
