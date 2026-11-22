@@ -68,7 +68,7 @@ def strip(brand: str, strength: str, generic: str) -> Image.Image:
 
 def main() -> None:
     SAMPLES.mkdir(exist_ok=True)
-    blurry = bp_screen(138, 86, 72).filter(ImageFilter.GaussianBlur(18))
+    blurry = bp_screen(138, 86, 72).filter(ImageFilter.GaussianBlur(48))
     images = {
         "synthetic_bp_normal.jpg": bp_screen(132, 84, 74),
         "synthetic_bp_high.jpg": bp_screen(186, 122, 92),

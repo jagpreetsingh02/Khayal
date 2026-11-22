@@ -37,8 +37,8 @@
       "file": "synthetic_bp_blurry.jpg",
       "kind": "meter",
       "synthetic": true,
-      "note": "too blurred to read: the reader must not guess numbers",
-      "expected": {"device_type": "bp", "legible": false, "issues": ["blur"]}
+      "note": "too blurred to read or even to tell the device: the reader must not guess numbers",
+      "expected": {"device_type": "unknown", "legible": false, "issues": ["blur"]}
     }
   ]
 }
