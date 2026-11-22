@@ -292,12 +292,12 @@ def test_red_glucose_alert_notifies_every_child(w):
     assert out["sent"] and out["level"] == "red"
     assert set(out["notified_member_ids"]) == {c.id for c in w.children}
     assert all("108/112" in m.text for m in w.outbox.outbox)
-    assert out["voice_call"] is False  # VOICE=none in mock mode
+    assert out["voice_call"] is False  # CALL_PROVIDER=none in tests
     assert w.store.list_alerts(w.parent.id)[0].reading_id == r.id
 
 
 def test_red_triggers_voice_call_when_enabled(w, monkeypatch):
-    monkeypatch.setenv("VOICE", "elevenlabs")
+    monkeypatch.setenv("CALL_PROVIDER", "mock")
     from app.config import get_settings
 
     get_settings.cache_clear()
@@ -307,7 +307,7 @@ def test_red_triggers_voice_call_when_enabled(w, monkeypatch):
         assert out["voice_call"] is True
         assert {m.kind for m in w.outbox.outbox} == {"message", "voice_call"}
     finally:
-        monkeypatch.delenv("VOICE")
+        monkeypatch.setenv("CALL_PROVIDER", "none")
         get_settings.cache_clear()
 
 

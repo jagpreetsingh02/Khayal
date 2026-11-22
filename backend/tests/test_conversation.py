@@ -582,8 +582,8 @@ def _dose(w, minutes_ago: float, brand: str = "Telma 40") -> DoseEvent:
 
 def test_dose_reply_1_marks_taken(w):
     ev = _dose(w, 10)
-    assert w.engine.dose_reminder(w.parent.id, [ev.medicine_id]).text == (
-        "Time for Telma 40. Reply 1 taken / 2 skipped"
+    assert w.engine.dose_reminder(w.parent.id, [ev.medicine_id], "20:00").text == (
+        "8:00 PM: time for Telma 40. Reply 1 when taken, 2 if skipped."
     )
     assert w.say("1") == tpl.DOSE_TAKEN.format(names="Telma 40")
     [e] = w.store.list_dose_events(w.parent.id)
