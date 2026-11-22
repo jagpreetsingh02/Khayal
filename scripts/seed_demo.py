@@ -1,7 +1,9 @@
 """Seed a demo family: one parent, two children, medicines and 14 days of readings.
 
-Run from backend/ (uses DATABASE_URL, default ./care_circle.db, and wipes it first):
+Run from backend/ with the servers stopped (uses DATABASE_URL, default ./care_circle.db,
+and wipes it first):
     cd backend && uv run python ../scripts/seed_demo.py
+or let the start script do it: uv run python ../scripts/start.py --seed
 
 Numbers are synthetic but realistic for a 70-year-old on BP and diabetes medicines:
 morning BP most days, some evening BP, fasting glucose most days, a few post-meal values,
@@ -258,7 +260,8 @@ def main() -> None:
 
     path = path_from_url(get_settings().database_url)
     if path != ":memory:":
-        Path(path).unlink(missing_ok=True)
+        for suffix in ("", "-wal", "-shm"):  # WAL files would resurrect the old data
+            Path(path + suffix).unlink(missing_ok=True)
     store = SQLiteStore(path)
     set_store(store)
     summary = seed(store)
