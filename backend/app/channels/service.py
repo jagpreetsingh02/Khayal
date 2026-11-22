@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from app import clock
 from app.agent.rule_agent import RuleAgent
+from app.alerts.thresholds import EMERGENCY_LINE
 from app.channels.base import Channel
 from app.channels.simulator import SimulatorChannel
 from app.config import Settings, get_settings
@@ -175,6 +176,7 @@ class CareCircleService:
         member = self.store.get_member(msg.member_id)
         m = RED_ALERT.match(msg.text)
         parent, reason = (m["parent"], m["reason"]) if m else ("your family member", msg.text)
+        reason = reason.replace(EMERGENCY_LINE, "").strip()  # that line is for the parent
         lang = phrases.lang_of(member.language)
         script = phrases.say("red_call", lang, parent=parent, reason=reason)
         url = self.tts.speak(script) if self.tts else None

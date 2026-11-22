@@ -199,7 +199,7 @@ class Scheduler:
                     channel=child.channel,
                     to_ref=child.channel_ref,
                     member_id=child.id,
-                    text=f"Weekly summary for {parent.name}:\n{text}",
+                    text=text,  # already headed "Weekly summary for <parent> (dates)"
                 )
             )
         return out
