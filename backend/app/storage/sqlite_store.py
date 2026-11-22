@@ -12,6 +12,7 @@ from app.storage.base import NotFoundError, Store
 from app.storage.models import (
     Alert,
     AuditEntry,
+    ConsentStatus,
     ConversationState,
     DoseEvent,
     DoseStatus,
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS members (
   id TEXT PRIMARY KEY, family_id TEXT NOT NULL REFERENCES families(id),
   role TEXT NOT NULL, name TEXT NOT NULL, channel TEXT NOT NULL, channel_ref TEXT NOT NULL,
   language TEXT NOT NULL, consent_status TEXT NOT NULL, consent_at TEXT,
+  consent_text_version TEXT,
   UNIQUE (channel, channel_ref)
 );
 CREATE TABLE IF NOT EXISTS readings (
@@ -78,6 +80,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
   result_json TEXT NOT NULL, parent_id TEXT, created_at TEXT NOT NULL
 );
 """
+
+# Columns added after a table first shipped: (table, column, SQL type). Applied on open so an
+# existing local database keeps working.
+MIGRATIONS = [("members", "consent_text_version", "TEXT")]
 
 # Columns stored as JSON text.
 JSON_COLUMNS = {"times", "notified_member_ids", "payload"}
@@ -126,6 +132,10 @@ class SQLiteStore(Store):
         self._lock = threading.Lock()
         with self._lock, self._conn:
             self._conn.executescript(SCHEMA)
+            for table, column, sql_type in MIGRATIONS:
+                cols = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+                if column not in cols:
+                    self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
 
     @classmethod
     def from_url(cls, database_url: str) -> "SQLiteStore":
@@ -199,6 +209,20 @@ class SQLiteStore(Store):
         )
         return found[0] if found else None
 
+    def set_consent(
+        self,
+        member_id: str,
+        status: ConsentStatus,
+        *,
+        text_version: str | None = None,
+        at: datetime | None = None,
+    ) -> Member:
+        fields: dict[str, Any] = {"consent_status": status, "consent_at": at or utcnow()}
+        if text_version is not None:
+            fields["consent_text_version"] = text_version
+        self._update("members", "id", member_id, fields)
+        return self.get_member(member_id)
+
     def list_members(self, family_id: str, role: Role | None = None) -> list[Member]:
         sql, params = "SELECT * FROM members WHERE family_id = ?", [family_id]
         if role:
@@ -254,6 +278,10 @@ class SQLiteStore(Store):
         return self._query(
             Medicine, "SELECT * FROM medicines WHERE parent_id = ? ORDER BY brand", (parent_id,)
         )
+
+    def confirm_medicine(self, medicine_id: str) -> Medicine:
+        self._update("medicines", "id", medicine_id, {"confirmed": 1})
+        return self.get_medicine(medicine_id)
 
     def set_medicine_times(self, medicine_id: str, times: list[str]) -> Medicine:
         self._update("medicines", "id", medicine_id, {"times": json.dumps(times)})

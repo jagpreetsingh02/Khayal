@@ -1,0 +1,44 @@
+{
+  "about": "Ground truth for photos in this folder. Entries with \"synthetic\": true are drawn by scripts/make_synthetic_samples.py, not real photos, and do not measure real accuracy. Format: samples/README.md.",
+  "samples": [
+    {
+      "file": "synthetic_bp_normal.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {"device_type": "bp", "systolic": 132, "diastolic": 84, "pulse": 74}
+    },
+    {
+      "file": "synthetic_bp_high.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "at or above 180/120: triggers the repeat-reading flow",
+      "expected": {"device_type": "bp", "systolic": 186, "diastolic": 122, "pulse": 92}
+    },
+    {
+      "file": "synthetic_glucose_mgdl.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {"device_type": "glucose", "glucose_value": 112, "glucose_unit": "mg/dL"}
+    },
+    {
+      "file": "synthetic_glucose_mmol.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "6.2 mmol/L is stored as 111.6 mg/dL",
+      "expected": {"device_type": "glucose", "glucose_value": 6.2, "glucose_unit": "mmol/L"}
+    },
+    {
+      "file": "synthetic_strip_telma40.jpg",
+      "kind": "strip",
+      "synthetic": true,
+      "expected": {"brand": "Telma", "strength": "40"}
+    },
+    {
+      "file": "synthetic_bp_blurry.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "too blurred to read or even to tell the device: the reader must not guess numbers",
+      "expected": {"device_type": "unknown", "legible": false, "issues": ["blur"]}
+    }
+  ]
+}

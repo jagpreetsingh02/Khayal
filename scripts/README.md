@@ -8,4 +8,12 @@ Run from `backend/` so they use its environment and `DATABASE_URL`.
 - `mcp_client_demo.py`: connect to the running MCP server with a real MCP client
   (streamable HTTP), list the tools and call `log_reading` as the seeded parent.
   `uv run python ../scripts/mcp_client_demo.py [--url http://localhost:8001/mcp]`
-- `accuracy_test.py`: measure reader accuracy against `samples/labels.json` (Phase 6)
+- `chat_demo.py`: talk to the parent conversation in the terminal (in-memory DB, mock reader
+  by default). `--demo` runs the golden path; interactive commands `/photo <file> [caption]`,
+  `/wait <minutes>`. `--reader groq` uses the real vision model.
+  `uv run python ../scripts/chat_demo.py --demo`
+- `accuracy_test.py`: exact-match accuracy of a reader against `samples/labels.json`, per field
+  and overall, with every failure listed. `--reader groq` for the real model, `--real-only` to
+  skip synthetic samples. Label format: `samples/README.md`.
+  `uv run python ../scripts/accuracy_test.py --reader groq`
+- `make_synthetic_samples.py`: redraw the `samples/synthetic_*.jpg` images (drawn, not photos).

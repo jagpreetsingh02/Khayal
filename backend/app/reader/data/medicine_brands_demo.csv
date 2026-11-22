@@ -1,0 +1,56 @@
+brand,strength,generic,generic_strength,category
+Telma,20,Telmisartan,20 mg,bp
+Telma,40,Telmisartan,40 mg,bp
+Telma,80,Telmisartan,80 mg,bp
+Telma-H,40/12.5,Telmisartan + Hydrochlorothiazide,40 mg + 12.5 mg,bp
+Telma-AM,40/5,Telmisartan + Amlodipine,40 mg + 5 mg,bp
+Telvas,40,Telmisartan,40 mg,bp
+Telsartan,40,Telmisartan,40 mg,bp
+Amlong,2.5,Amlodipine,2.5 mg,bp
+Amlong,5,Amlodipine,5 mg,bp
+Amlokind,5,Amlodipine,5 mg,bp
+Amlopres,5,Amlodipine,5 mg,bp
+Stamlo,5,Amlodipine,5 mg,bp
+Losar,25,Losartan,25 mg,bp
+Losar,50,Losartan,50 mg,bp
+Losar-H,50/12.5,Losartan + Hydrochlorothiazide,50 mg + 12.5 mg,bp
+Repace,50,Losartan,50 mg,bp
+Olmezest,20,Olmesartan,20 mg,bp
+Olmezest,40,Olmesartan,40 mg,bp
+Cilacar,10,Cilnidipine,10 mg,bp
+Concor,5,Bisoprolol,5 mg,bp
+Met XL,25,Metoprolol succinate,25 mg,bp
+Met XL,50,Metoprolol succinate,50 mg,bp
+Metolar XR,25,Metoprolol succinate,25 mg,bp
+Prolomet XL,50,Metoprolol succinate,50 mg,bp
+Aten,50,Atenolol,50 mg,bp
+Tenormin,50,Atenolol,50 mg,bp
+Nebicard,5,Nebivolol,5 mg,bp
+Envas,5,Enalapril,5 mg,bp
+Cardace,5,Ramipril,5 mg,bp
+Aquazide,12.5,Hydrochlorothiazide,12.5 mg,bp
+Lasix,40,Furosemide,40 mg,bp
+Dytor,10,Torsemide,10 mg,bp
+Arkamin,0.1,Clonidine,0.1 mg,bp
+Glycomet,500,Metformin,500 mg,diabetes
+Glycomet,850,Metformin,850 mg,diabetes
+Glycomet SR,500,Metformin (sustained release),500 mg,diabetes
+Glycomet GP,1,Glimepiride + Metformin,1 mg + 500 mg,diabetes
+Glycomet GP,2,Glimepiride + Metformin,2 mg + 500 mg,diabetes
+Gluconorm SR,500,Metformin (sustained release),500 mg,diabetes
+Amaryl,1,Glimepiride,1 mg,diabetes
+Amaryl,2,Glimepiride,2 mg,diabetes
+Amaryl M,2,Glimepiride + Metformin,2 mg + 500 mg,diabetes
+Gemer,2,Glimepiride + Metformin,2 mg + 500 mg,diabetes
+Janumet,50/500,Sitagliptin + Metformin,50 mg + 500 mg,diabetes
+Januvia,100,Sitagliptin,100 mg,diabetes
+Istavel,100,Sitagliptin,100 mg,diabetes
+Galvus,50,Vildagliptin,50 mg,diabetes
+Galvus Met,50/500,Vildagliptin + Metformin,50 mg + 500 mg,diabetes
+Trajenta,5,Linagliptin,5 mg,diabetes
+Jardiance,10,Empagliflozin,10 mg,diabetes
+Forxiga,10,Dapagliflozin,10 mg,diabetes
+Pioz,15,Pioglitazone,15 mg,diabetes
+Diamicron XR,60,Gliclazide (modified release),60 mg,diabetes
+Daonil,5,Glibenclamide,5 mg,diabetes
+Volix,0.3,Voglibose,0.3 mg,diabetes

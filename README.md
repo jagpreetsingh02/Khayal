@@ -64,6 +64,9 @@ uv run python ../scripts/seed_demo.py              # demo family + 14 days of re
 uv run uvicorn app.main:app --reload --port 8000   # http://localhost:8000/health
 uv run python -m mcp_server.server                 # MCP server on http://localhost:8001/mcp
 uv run python ../scripts/mcp_client_demo.py        # (new terminal) list MCP tools, call log_reading
+uv run python ../scripts/chat_demo.py --demo       # parent chat: photo -> read-back -> 1 -> repeat -> red alert
+uv run python ../scripts/chat_demo.py              # same, interactive (/photo <file>, /wait <min>)
+uv run python ../scripts/accuracy_test.py          # reader accuracy on samples/ (--reader groq for real)
 
 # Dashboard (new terminal)
 cd dashboard
@@ -74,8 +77,8 @@ npm run dev                     # http://localhost:5173
 ## Roadmap
 
 - [x] Phase 0: repo setup, scaffolds, smoke tests
-- [ ] Phase 1: MCP core and storage (tools, thresholds, audit log)
-- [ ] Phase 2: photo reader and read-back confirmation
+- [x] Phase 1: MCP core and storage (tools, thresholds, audit log)
+- [x] Phase 2: photo reader and read-back confirmation
 - [ ] Phase 3: channels and agent, golden path in the web simulator
 - [ ] Phase 4: family dashboard and refill approval
 - [ ] Phase 5: voice replies and reminders
