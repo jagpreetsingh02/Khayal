@@ -276,6 +276,33 @@ def test_groq_reader_network_error_then_success():
     assert reader.read_meter(ImageInput(data=jpeg(800, 600))).systolic == 142
 
 
+def _rate_limited(retry_after: str) -> httpx.Response:
+    msg = "Rate limit reached for model in organization `org_01abcDEF123` on tokens per minute"
+    return httpx.Response(
+        429, headers={"retry-after": retry_after}, json={"error": {"message": msg}}
+    )
+
+
+def test_groq_reader_waits_for_retry_after_on_rate_limit():
+    waits = []
+    fake = FakeGroq(_rate_limited("3"), chat(METER_JSON))
+    client = httpx.Client(transport=httpx.MockTransport(fake.handler))
+    reader = GroqReader(FAKE_KEY, "m", client=client, sleep=waits.append)
+    assert reader.read_meter(ImageInput(data=jpeg(800, 600))).systolic == 142
+    assert waits == [3.0]
+
+
+def test_groq_reader_fails_fast_when_rate_limit_wait_is_too_long():
+    waits = []
+    fake = FakeGroq(_rate_limited("45"), chat(METER_JSON))
+    client = httpx.Client(transport=httpx.MockTransport(fake.handler))
+    reader = GroqReader(FAKE_KEY, "m", client=client, sleep=waits.append, max_wait=10)
+    with pytest.raises(ReaderError, match="429") as info:
+        reader.read_meter(ImageInput(data=jpeg(800, 600)))
+    assert waits == [] and len(fake.requests) == 1
+    assert "org_01abcDEF123" not in str(info.value)  # account ids are redacted
+
+
 def test_groq_reader_requires_key_and_model():
     with pytest.raises(ValueError, match="GROQ_API_KEY"):
         GroqReader("", "m")
