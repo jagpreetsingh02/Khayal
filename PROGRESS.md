@@ -107,7 +107,7 @@ Repo: https://github.com/jagpreetsingh02/care-circle (public)
 
 - 2026-11-22: Phase 2 — photos are never stored (bytes read then dropped; `image_ref` unused).
   Readings/alerts only via the chat engine after "1"; family messages come back from
-  `handle_message` (outbox drained). First severe BP -> amber to family + ask repeat (per §6.3
+  `handle_message` (outbox drained). [Superseded in Phase 3: first severe BP alerts nobody] (old §6.3
   table); red only on a confirmed repeat 5-60 min later; too-early repeat photo is not stored.
   30-min timeout marks the reading `expired` (lazy on next message, or `expire_stale()`).
 - 2026-11-22: Strips: match needs brand ratio >= 85 AND exact strength, else "not in my list"
