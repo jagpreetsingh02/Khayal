@@ -379,3 +379,47 @@ def test_dashboard_page_is_served_or_explains_the_build(dash):
     r = dash.c.get("/dashboard/")
     assert r.status_code in (200, 503)
     assert "Care Circle" in r.text
+
+
+# ---------- README golden path on seeded data (mock mode) ----------
+
+
+def test_readme_golden_path_on_seeded_data(dash):
+    def say(text=None, sample=None):
+        r = dash.c.post(
+            "/simulator/api/send", json={"sender_ref": PARENT_REF, "text": text, "sample": sample}
+        )
+        assert r.status_code == 200, r.text
+        return dash.feed(dash.parent)[-1]
+
+    h, pid = dash.login(dash.ravi), dash.parent.id
+    assert "186/122" in say(sample="synthetic_bp_high.jpg")
+    say("1")
+    first = dash.c.get("/api/alerts?days=1", headers=h).json()["alerts"]
+    assert not any(a["level"] == "red" for a in first)  # first severe BP: nobody alerted
+    dash.c.post("/simulator/api/skip", json={"minutes": 5})
+    say(sample="synthetic_bp_high.jpg")
+    say("1")
+    [red] = [
+        a
+        for a in dash.c.get("/api/alerts?days=1", headers=h).json()["alerts"]
+        if a["level"] == "red"
+    ]
+    assert any("RED alert" in t for t in dash.feed(dash.ravi))
+    latest = dash.c.get(f"/api/parents/{pid}/overview", headers=h).json()["latest"]["bp"]
+    assert latest["systolic"] >= 180
+
+    assert "Telma 40" in say(sample="synthetic_strip_telma40.jpg")
+    say("1")
+    telmas = [m for m in dash.store.list_medicines(pid) if m.brand == "Telma 40"]
+    assert len(telmas) == 1  # the seeded medicine, not a duplicate
+
+    r = dash.c.post(
+        f"/api/parents/{pid}/demo/low-stock", json={"medicine_id": telmas[0].id}, headers=h
+    )
+    assert r.status_code == 200, r.text
+    [refill] = dash.c.get("/api/refills?status=pending_approval", headers=h).json()["refills"]
+    dash.c.post(f"/api/refills/{refill['id']}/approve", headers=h)
+    assert "your pharmacy will confirm" in dash.feed(dash.parent)[-1]
+    assert dash.c.get("/api/audit", headers=h).json()["stats"]["ai_approve_calls"] == 0
+    assert red["reason"].endswith("call 108/112.")
