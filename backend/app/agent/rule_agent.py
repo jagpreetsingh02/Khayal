@@ -22,7 +22,8 @@ from pydantic import BaseModel
 
 from app.alerts.evaluate import evaluate_confirmed_reading
 from app.storage.base import Store
-from app.storage.models import Member, Reading
+from app.storage.models import Medicine, Member, Reading
+from mcp_server.guardrails import REFILL_MAX_DAYS
 from mcp_server.identity import sender_meta
 
 log = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class ReadingOutcome(BaseModel):
     rule: str | None = None
     ask_repeat: bool = False
     alert_sent: bool = False
+    not_shared: bool = False  # the parent chose not to share alerts with the family
 
 
 class Agent(Protocol):
@@ -117,6 +119,7 @@ class RuleAgent:
         outcome.alert_sent = bool(
             result.get("sent") or result.get("already_sent") or result.get("suppressed")
         )
+        outcome.not_shared = bool(result.get("not_shared"))
         outcome.level = result.get("level", outcome.level)
         outcome.rule = result.get("rule", outcome.rule)
         return outcome
@@ -133,6 +136,13 @@ class RuleAgent:
     def after_missed_repeat(self, parent: Member, reading: Reading) -> ReadingOutcome:
         outcome = ReadingOutcome(level="amber", rule="bp_severe_no_repeat")
         return self._alert(parent, reading, outcome, "No repeat BP reading within 15 minutes.")
+
+    def request_refill(self, parent: Member, medicine: Medicine) -> dict[str, Any]:
+        """Low stock: ask the family for one month's supply. The tool only creates a
+        pending request; approval happens on the dashboard, never here. Raises ToolError
+        when the server refuses (already pending, Schedule X, not shared, no consent)."""
+        qty = medicine.daily_dose * REFILL_MAX_DAYS
+        return self.call_tool(parent, "request_refill", {"med_id": medicine.id, "qty": qty})
 
     def set_reminder(self, parent: Member, medicine_id: str, times: list[str]) -> list[str]:
         result = self.call_tool(parent, "create_reminder", {"med_id": medicine_id, "times": times})

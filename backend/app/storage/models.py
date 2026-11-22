@@ -117,6 +117,27 @@ class Refill(BaseModel):
     decided_by_member_id: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     decided_at: datetime | None = None
+    # Demo partner pharmacy reference once handed over (no real order is placed).
+    pharmacy_ref: str | None = None
+
+
+ShareCategory = Literal["readings", "alerts", "medicines"]
+SHARE_CATEGORIES: tuple[ShareCategory, ...] = ("readings", "alerts", "medicines")
+
+
+class Sharing(BaseModel):
+    """What the parent lets the family see (§6.5, parent-first). Only the parent changes it.
+    Default: everything the consent notice mentions is shared."""
+
+    parent_id: str
+    readings: bool = True  # readings, charts, the doctor-set limits
+    alerts: bool = True  # alerts on the dashboard and in family chats
+    medicines: bool = True  # medicines, reminders, doses, refill requests
+    updated_by: str | None = None  # member id
+    updated_at: datetime | None = None
+
+    def allows(self, category: ShareCategory) -> bool:
+        return bool(getattr(self, category))
 
 
 class ConversationState(BaseModel):

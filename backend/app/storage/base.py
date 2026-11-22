@@ -22,12 +22,17 @@ from app.storage.models import (
     RefillStatus,
     Role,
     SetBy,
+    Sharing,
     Threshold,
 )
 
 
 class NotFoundError(LookupError):
     """Raised when a record does not exist."""
+
+
+class ConflictError(ValueError):
+    """Raised when a state change is not allowed from the record's current state."""
 
 
 class Store(ABC):
@@ -105,6 +110,9 @@ class Store(ABC):
     def set_medicine_times(self, medicine_id: str, times: list[str]) -> Medicine: ...
 
     @abstractmethod
+    def set_medicine_stock(self, medicine_id: str, stock_count: int) -> Medicine: ...
+
+    @abstractmethod
     def add_dose_event(self, event: DoseEvent) -> DoseEvent: ...
 
     @abstractmethod
@@ -133,7 +141,14 @@ class Store(ABC):
     def add_alert(self, alert: Alert) -> Alert: ...
 
     @abstractmethod
+    def get_alert(self, alert_id: str) -> Alert: ...
+
+    @abstractmethod
     def list_alerts(self, parent_id: str, *, since: datetime | None = None) -> list[Alert]: ...
+
+    @abstractmethod
+    def acknowledge_alert(self, alert_id: str, member_id: str, at: datetime | None = None) -> Alert:
+        """First acknowledgement wins; acknowledging again returns the alert unchanged."""
 
     # --- refills ---
     @abstractmethod
@@ -151,7 +166,20 @@ class Store(ABC):
     def decide_refill(
         self, refill_id: str, status: RefillStatus, member_id: str, at: datetime | None = None
     ) -> Refill:
-        """Called only by the dashboard API after a family member's click."""
+        """Called only by the dashboard API after a family member's click. Atomic: only a
+        `pending_approval` refill can be decided; otherwise raises ConflictError."""
+
+    @abstractmethod
+    def set_refill_pharmacy(self, refill_id: str, status: RefillStatus, ref: str) -> Refill:
+        """Pharmacy hand-over after approval (keeps who decided and when)."""
+
+    # --- sharing (parent-first, §6.5) ---
+    @abstractmethod
+    def get_sharing(self, parent_id: str) -> Sharing:
+        """The parent's choices; defaults (everything shared) if never set."""
+
+    @abstractmethod
+    def set_sharing(self, sharing: Sharing) -> Sharing: ...
 
     # --- conversation state ---
     @abstractmethod
@@ -177,7 +205,9 @@ class Store(ABC):
     def add_audit(self, entry: AuditEntry) -> AuditEntry: ...
 
     @abstractmethod
-    def list_audit(self, *, tool: str | None = None, limit: int = 100) -> list[AuditEntry]:
+    def list_audit(
+        self, *, tool: str | None = None, parent_id: str | None = None, limit: int = 100
+    ) -> list[AuditEntry]:
         """Newest first."""
 
     # --- demo helpers (web simulator only) ---

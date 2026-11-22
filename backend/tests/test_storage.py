@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.storage.base import NotFoundError
+from app.storage.base import ConflictError, NotFoundError
 from app.storage.models import (
     Alert,
     AuditEntry,
@@ -138,6 +138,29 @@ def test_medicines_doses_and_refills(store, parent):
     assert store.list_refills(parent.id, status="pending_approval")[0].id == rf.id
     decided = store.decide_refill(rf.id, "approved", member_id="mem_child")
     assert decided.status == "approved" and decided.decided_by_member_id == "mem_child"
+    with pytest.raises(ConflictError):  # decided once; a second decision is refused
+        store.decide_refill(rf.id, "rejected", member_id="mem_other")
+    assert store.get_refill(rf.id).decided_by_member_id == "mem_child"
+    sent = store.set_refill_pharmacy(rf.id, "sent_to_pharmacy", "DEMO-1")
+    assert (sent.status, sent.pharmacy_ref, sent.decided_by_member_id) == (
+        "sent_to_pharmacy",
+        "DEMO-1",
+        "mem_child",
+    )
+    assert store.set_medicine_stock(med.id, 3).stock_count == 3
+
+
+def test_sharing_defaults_and_alert_acknowledge(store, parent):
+    from app.storage.models import Alert, Sharing
+
+    assert store.get_sharing(parent.id).allows("medicines")  # default: all shared
+    store.set_sharing(Sharing(parent_id=parent.id, alerts=False, updated_by=parent.id))
+    s = store.get_sharing(parent.id)
+    assert (s.readings, s.alerts, s.medicines) == (True, False, True) and s.updated_at
+    al = store.add_alert(Alert(parent_id=parent.id, level="amber", reason="x"))
+    first = store.acknowledge_alert(al.id, "mem_a")
+    again = store.acknowledge_alert(al.id, "mem_b")  # first acknowledgement wins
+    assert first.acknowledged_by == again.acknowledged_by == "mem_a"
 
 
 def test_thresholds_upsert(store, parent):

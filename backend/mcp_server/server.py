@@ -6,12 +6,13 @@ Guardrails built in:
 - log_reading only writes `unconfirmed` readings. Confirmation is the parent's read-back
   reply, handled server-side; there is no MCP tool that confirms a reading.
 - alert_family only fires for confirmed readings / server-evaluated rules, caps amber,
-  never caps red, and families only ever see server-written text. A first severe BP
+  never caps red, and families only ever see server-written text. Nothing is sent when
+  the parent has chosen not to share alerts (sharing settings, parent-first). A first severe BP
   alerts nobody: red needs a confirming repeat, amber needs 15 minutes without one.
 - Consent (§6.5): a parent who has not agreed, or has paused / revoked, is refused by
   every tool (nothing logged, alerted or reminded).
 - request_refill creates `pending_approval` only, capped at one month's supply, never for
-  Schedule X medicines.
+  Schedule X medicines, and tells the family (server-written text) to decide on the dashboard.
 - There is deliberately NO approve_refill tool: approval exists only in the dashboard
   API, triggered by a family member.
 - weekly_summary passes through an output filter that blocks diagnosis / dosing words.
@@ -287,6 +288,13 @@ def create_server(
             )
         final: Evaluation = evaluation  # a red evaluation is sent as red even if amber asked
 
+        if not s.get_sharing(parent.id).alerts:  # parent-first (§6.5): the parent decides
+            return {
+                "sent": False,
+                "not_shared": True,
+                "why": "The parent has chosen not to share alerts with the family.",
+            }
+
         recent = s.list_alerts(parent.id, since=clock() - timedelta(days=1))
         if reading_id:
             dup = next(
@@ -343,13 +351,26 @@ def create_server(
         pending = db().list_refills(parent.id, status="pending_approval")
         if any(r.medicine_id == med.id for r in pending):
             raise ToolError("A refill for this medicine is already waiting for approval.")
+        if not db().get_sharing(parent.id).medicines:
+            raise ToolError(
+                "The parent has not shared medicines with the family, so no one can approve "
+                "a refill."
+            )
         refill = db().add_refill(Refill(medicine_id=med.id, qty=qty))
+        family = db().list_members(parent.family_id, role="child")
+        for member in family:
+            notifier.send(
+                member,
+                f"Refill request for {parent.name}: {med.brand} x{qty}. "
+                "Approve or reject it on the Care Circle dashboard.",
+            )
         return {
             "refill_id": refill.id,
             "status": refill.status,
             "brand": med.brand,
             "qty": qty,
             "note": "Waiting for a family member to approve on the dashboard.",
+            "notified_member_ids": [m.id for m in family],
         }
 
     @mcp.tool

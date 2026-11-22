@@ -1,8 +1,13 @@
-"""Start the Care Circle demo: the MCP server and the API (web simulator) together.
+"""Start the Care Circle demo: the MCP server and the API (web simulator + family
+dashboard) together, on one port.
 
     cd backend
-    uv run python ../scripts/start.py            # http://localhost:8000/simulator
+    uv run python ../scripts/start.py --seed     # fresh 14-day demo data, then start
+    uv run python ../scripts/start.py            # keep the current database
     uv run python ../scripts/start.py --port 8080
+
+Simulator: http://localhost:8000/simulator · Dashboard: http://localhost:8000/dashboard/
+(build the dashboard once first: cd dashboard && npm install && npm run build).
 
 The MCP server listens on MCP_SERVER_URL (default http://localhost:8001/mcp, localhost only);
 the API's agent calls it over streamable HTTP. Both share the SQLite file DATABASE_URL.
@@ -41,6 +46,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Run the MCP server and the API together.")
     ap.add_argument("--port", type=int, default=8000, help="API port (default 8000)")
     ap.add_argument("--host", default="127.0.0.1", help="API host (default 127.0.0.1)")
+    ap.add_argument(
+        "--seed", action="store_true", help="wipe the database and seed 14 days of demo data"
+    )
     args = ap.parse_args(argv)
 
     # `kill <pid>` (SIGTERM) should stop both servers too, not only Ctrl+C.
@@ -48,6 +56,12 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     mcp_port = urlparse(settings.mcp_server_url).port or 8001
     py = sys.executable
+    if args.seed:
+        seed = Path(__file__).resolve().parent / "seed_demo.py"
+        if subprocess.run([py, str(seed)], cwd=BACKEND).returncode != 0:
+            print("Seeding failed.", file=sys.stderr)
+            return 1
+    built = (BACKEND.parent / "dashboard" / "dist" / "index.html").is_file()
     procs: list[subprocess.Popen] = []
     try:
         mcp = subprocess.Popen([py, "-m", "mcp_server.server"], cwd=BACKEND)
@@ -65,6 +79,9 @@ def main(argv: list[str] | None = None) -> int:
             f"\n  Care Circle is running (APP_MODE={settings.app_mode}, "
             f"CHANNEL={settings.channel}, LLM_PROVIDER={settings.llm_provider})\n"
             f"  Simulator:  http://localhost:{args.port}/simulator\n"
+            f"  Dashboard:  http://localhost:{args.port}/dashboard/"
+            + ("" if built else "  (not built: cd dashboard && npm run build)")
+            + "\n"
             f"  MCP server: {settings.mcp_server_url}\n"
             "  Ctrl+C to stop.\n",
             flush=True,

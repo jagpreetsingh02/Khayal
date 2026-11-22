@@ -8,7 +8,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from app.alerts.notifier import OutboxNotifier
-from app.storage.models import DoseEvent, Family, Medicine, Member, Reading, utcnow
+from app.storage.models import DoseEvent, Family, Medicine, Member, Reading, Sharing, utcnow
 from app.storage.sqlite_store import SQLiteStore
 from mcp_server import summary as summary_mod
 from mcp_server.guardrails import blocked_terms
@@ -422,6 +422,27 @@ def test_refill_no_duplicate_pending(w):
     w.call("request_refill", {"med_id": w.telma.id, "qty": 10})
     with pytest.raises(ToolError, match="already waiting"):
         w.call("request_refill", {"med_id": w.telma.id, "qty": 10})
+
+
+def test_refill_request_tells_the_family(w):
+    out = w.call("request_refill", {"med_id": w.telma.id, "qty": 30})
+    assert set(out["notified_member_ids"]) == {c.id for c in w.children}
+    assert all("Telma 40 x30" in m.text and "dashboard" in m.text for m in w.outbox.outbox)
+
+
+def test_refill_refused_when_parent_does_not_share_medicines(w):
+    w.store.set_sharing(Sharing(parent_id=w.parent.id, medicines=False))
+    with pytest.raises(ToolError, match="not shared medicines"):
+        w.call("request_refill", {"med_id": w.telma.id, "qty": 10})
+    assert w.store.list_refills(w.parent.id) == [] and w.outbox.outbox == []
+
+
+def test_alert_not_sent_when_parent_does_not_share_alerts(w):
+    w.store.set_sharing(Sharing(parent_id=w.parent.id, alerts=False))
+    r = w.confirmed_reading(type="glucose", glucose_mgdl=45)
+    out = w.call("alert_family", {"level": "red", "reason": "glucose 45", "reading_id": r.id})
+    assert out["sent"] is False and out["not_shared"] is True
+    assert w.outbox.outbox == [] and w.store.list_alerts(w.parent.id) == []
 
 
 # ---------- weekly_summary ----------
