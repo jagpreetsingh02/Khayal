@@ -3,7 +3,11 @@
     cd backend
     uv run python ../scripts/accuracy_test.py                       # mock reader
     uv run python ../scripts/accuracy_test.py --reader groq         # needs GROQ_API_KEY
-    uv run python ../scripts/accuracy_test.py --reader groq --real-only
+    uv run python ../scripts/accuracy_test.py --reader groq --real-only --yes
+
+A real reader spends API quota: the script estimates the tokens first and asks to continue
+(`--yes` skips the question; without a terminal it stops unless `--yes` is given), then prints
+the tokens the API reported.
 
 "Overall" counts a photo as correct only when every checked field matches. A reader error
 counts as a miss on every field. Label format: samples/README.md.
@@ -22,6 +26,10 @@ from app.config import get_settings  # noqa: E402
 from app.reader import Reader, ReaderError  # noqa: E402
 from app.reader.labels import SAMPLES_DIR, Label, load_labels  # noqa: E402
 from app.reader.schema import ImageInput  # noqa: E402
+
+# Measured on Groq qwen/qwen3.8-27b (Nov 2026): ~2.4k input+output tokens per downscaled photo.
+EST_TOKENS_PER_PHOTO = 2400
+GROQ_FREE_TOKENS_PER_DAY = 200_000  # free tier limit seen in Groq's 429 message, Nov 2026
 
 
 def make_reader(name: str, samples_dir: Path) -> Reader:
@@ -84,6 +92,38 @@ def pct(hits: list[bool]) -> str:
     return f"{100 * sum(hits) / len(hits):5.1f}% ({sum(hits)}/{len(hits)})" if hits else "n/a"
 
 
+def confirm_real_run(reader_name: str, photos: int, assume_yes: bool) -> bool:
+    """Warn before spending real API quota; True to go ahead."""
+    estimate = photos * EST_TOKENS_PER_PHOTO
+    share = 100 * estimate / GROQ_FREE_TOKENS_PER_DAY
+    print(
+        f"WARNING: --reader {reader_name} sends {photos} photo(s) to the real API.\n"
+        f"  Estimated ~{estimate:,} tokens (~{EST_TOKENS_PER_PHOTO:,} per photo), about "
+        f"{share:.0f}% of a {GROQ_FREE_TOKENS_PER_DAY:,} tokens/day free quota.\n"
+        "  The free tier also allows only ~3 photos a minute, so this can take a while."
+    )
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        print("Not run: no terminal to confirm. Re-run with --yes to spend the quota.")
+        return False
+    return input("Continue? [y/N] ").strip().lower() in ("y", "yes")
+
+
+def token_line(reader: Reader, photos: int) -> str:
+    calls = getattr(reader, "calls", None)
+    if calls is None:
+        return "Tokens used: 0 (mock reader, no API calls)"
+    used = getattr(reader, "tokens_used", 0)
+    if used:
+        per = used / calls if calls else 0
+        return f"Tokens used: {used:,} reported by the API over {calls} call(s) (~{per:,.0f} each)"
+    return (
+        f"Tokens used: not reported by the API; estimate ~{photos * EST_TOKENS_PER_PHOTO:,} "
+        f"({calls} call(s))"
+    )
+
+
 def report(reader_name: str, outcome: dict[str, Any], skipped: list[str]) -> None:
     results = outcome["results"]
     print(f"Reader: {reader_name} · photos: {len(results)}")
@@ -115,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reader", choices=["mock", "groq"], default="mock")
     ap.add_argument("--samples", type=Path, default=SAMPLES_DIR)
     ap.add_argument("--real-only", action="store_true", help="skip synthetic_* samples")
+    ap.add_argument("--yes", action="store_true", help="don't ask before spending real API quota")
     args = ap.parse_args(argv)
 
     labels = load_labels(args.samples)
@@ -127,8 +168,11 @@ def main(argv: list[str] | None = None) -> int:
     if not labels:
         print("No samples to test. Add photos and labels: see samples/README.md.")
         return 1
+    if args.reader != "mock" and not confirm_real_run(args.reader, len(labels), args.yes):
+        return 2
     reader = make_reader(args.reader, args.samples)
     report(args.reader, evaluate(reader, labels, args.samples), skipped)
+    print(token_line(reader, len(labels)))
     return 0
 
 
