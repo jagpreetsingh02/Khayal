@@ -94,6 +94,8 @@ class GroqReader(Reader):
         self._client = client or httpx.Client(timeout=timeout)
         self.max_wait = max_wait
         self._sleep = sleep
+        self.tokens_used = 0  # from the API's `usage` (accuracy_test.py reports it)
+        self.calls = 0
 
     def __repr__(self) -> str:  # never show the key
         return f"GroqReader(model={self.model!r})"
@@ -166,8 +168,12 @@ class GroqReader(Reader):
             raise _Retryable(f"HTTP 429 rate limited: {_error_message(resp)}", wait=wait)
         if resp.status_code != 200:
             raise _Retryable(f"HTTP {resp.status_code}: {_error_message(resp)}")
+        self.calls += 1
         try:
-            return resp.json()["choices"][0]["message"]["content"] or ""
+            payload = resp.json()
+            usage = payload.get("usage") or {}
+            self.tokens_used += int(usage.get("total_tokens") or 0)
+            return payload["choices"][0]["message"]["content"] or ""
         except (ValueError, KeyError, IndexError, TypeError):
             raise _Retryable("unexpected response shape") from None
 

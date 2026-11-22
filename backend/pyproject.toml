@@ -29,6 +29,9 @@ package = false
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+markers = [
+  "live: calls a real external API; skipped unless RUN_LIVE_TESTS=1 (uses your quota)",
+]
 
 [tool.ruff]
 line-length = 100

@@ -64,3 +64,38 @@ def test_strip_comparison_ignores_case_spaces_and_mg():
     assert not accuracy.same("strength", "40", "80")
     assert accuracy.same("glucose_value", 6.2, 6.2)
     assert not accuracy.same("pulse", None, 72)  # a number where none is shown is a miss
+
+
+def test_mock_run_reports_zero_tokens(capsys):
+    accuracy.main(["--reader", "mock"])
+    assert "Tokens used: 0 (mock reader, no API calls)" in capsys.readouterr().out
+
+
+def test_real_reader_warns_and_stops_without_confirmation(monkeypatch, capsys):
+    made = []
+    monkeypatch.setattr(accuracy, "make_reader", lambda *a: made.append(a))
+    monkeypatch.setattr(accuracy.sys.stdin, "isatty", lambda: False)
+    assert accuracy.main(["--reader", "groq"]) == 2
+    out = capsys.readouterr().out
+    assert "WARNING" in out and "tokens" in out and "--yes" in out
+    assert made == []  # no reader built, no API call
+
+
+def test_real_reader_with_yes_reports_api_tokens(monkeypatch, capsys):
+    class CountingReader(MockReader):
+        calls, tokens_used = 0, 0
+
+        def read_meter(self, image):
+            self.calls += 1
+            self.tokens_used += 2400
+            return super().read_meter(image)
+
+        def read_strip(self, image):
+            self.calls += 1
+            self.tokens_used += 2400
+            return super().read_strip(image)
+
+    monkeypatch.setattr(accuracy, "make_reader", lambda name, d: CountingReader(d))
+    assert accuracy.main(["--reader", "groq", "--yes"]) == 0
+    out = capsys.readouterr().out
+    assert "Estimated ~" in out and "reported by the API" in out
