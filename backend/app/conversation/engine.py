@@ -29,13 +29,14 @@ from app.agent.rule_agent import Agent
 from app.alerts.thresholds import BP_REPEAT_MAX, BP_REPEAT_MIN, BP_REPEAT_WAIT
 from app.conversation import parse
 from app.conversation import templates as tpl
-from app.conversation.messages import Incoming, Outgoing
+from app.conversation.messages import Incoming, Outgoing, Voice
 from app.reader.base import Reader, ReaderError
 from app.reader.intake import build_reading
 from app.reader.schema import ImageInput
 from app.reader.strips import match_strip
 from app.storage.base import Store
 from app.storage.models import ConversationState, Medicine, Member, ReadingType, utcnow
+from app.voice import phrases
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,17 @@ AWAITING_MED_TIME = "awaiting_med_time"
 ANSWER_TIMEOUT = timedelta(minutes=30)
 DOSE_REPLY_WINDOW = timedelta(hours=3)
 DEFAULT_REMINDER = "20:00"
+
+
+class Said(str):
+    """A reply text plus the short phrase to speak if the parent used a voice note."""
+
+    voice: Voice | None
+
+    def __new__(cls, text: str, voice: Voice | None = None) -> "Said":
+        obj = super().__new__(cls, text)
+        obj.voice = voice
+        return obj
 
 
 def _iso(ts: datetime) -> str:
@@ -86,8 +98,27 @@ class ConversationEngine:
             return [reply]
         if member.role != "parent":
             return [self._to(member, tpl.NOT_A_PARENT)]
+        if msg.via_voice and not (msg.text or "").strip() and msg.image is None:
+            lang = phrases.lang_of(member.language)
+            said = Said(tpl.VOICE_UNCLEAR, phrases.say("not_understood", lang))
+            return [self._to(member, said, said.voice)]
         texts = self._handle_parent(member, msg, now)
-        return [self._to(member, t) for t in texts] + self.drain_outbox()
+        return [self._to(member, t, self._reply_voice(member, msg, t)) for t in texts] + (
+            self.drain_outbox()
+        )
+
+    @staticmethod
+    def _reply_voice(member: Member, msg: Incoming, text: str) -> Voice | None:
+        """Answer a voice note with a voice note: the matching phrase in the parent's
+        language, or the reply itself for English speakers. Text-only otherwise."""
+        if not msg.via_voice:
+            return None
+        voice = getattr(text, "voice", None)
+        if voice is not None:
+            return voice
+        if phrases.lang_of(member.language) == "en":
+            return Voice(text=str(text), lang="en")
+        return None
 
     def expire_stale(self, member_id: str, now: datetime | None = None) -> list[Outgoing]:
         """Apply timeouts for one parent without an incoming message."""
@@ -107,14 +138,33 @@ class ConversationEngine:
                 out += self.expire_stale(state.member_id, now)
         return out + self.drain_outbox()
 
-    def dose_reminder(self, member_id: str, medicine_ids: list[str]) -> Outgoing | None:
-        """The reminder text the scheduler sends (Phase 5); replies are handled here.
-        None when the parent has not agreed or has paused: no reminders then (§6.5)."""
+    def dose_reminder(
+        self, member_id: str, medicine_ids: list[str], hhmm: str | None = None
+    ) -> Outgoing | None:
+        """The reminder the scheduler sends at a medicine time (with a voice note); replies
+        are handled here. None when the parent has not agreed or has paused (§6.5)."""
+        return self._dose_message(member_id, medicine_ids, hhmm, tpl.DOSE_REMINDER, "dose_reminder")
+
+    def dose_followup(self, member_id: str, medicine_ids: list[str], hhmm: str) -> Outgoing | None:
+        """The one gentle follow-up 30 minutes after a reminder without a "taken" reply."""
+        return self._dose_message(member_id, medicine_ids, hhmm, tpl.DOSE_FOLLOWUP, "dose_followup")
+
+    def _dose_message(
+        self, member_id: str, medicine_ids: list[str], hhmm: str | None, template: str, phrase: str
+    ) -> Outgoing | None:
         member = self.store.get_member(member_id)
         if member.consent_status != "granted":
             return None
-        names = [self.store.get_medicine(m).brand for m in medicine_ids]
-        return self._to(member, tpl.DOSE_REMINDER.format(names=tpl.join_names(names)))
+        names = tpl.join_names([self.store.get_medicine(m).brand for m in medicine_ids])
+        lang = phrases.lang_of(member.language)
+        if hhmm:
+            text = template.format(time=tpl.clock_12h(hhmm), names=names)
+        else:  # no slot given (tests / manual use)
+            text = template.split(": ", 1)[-1].format(names=names).capitalize()
+        voice = phrases.say(
+            phrase, lang, names=names, time=phrases.time_words(hhmm or "00:00", lang)
+        )
+        return self._to(member, text, voice if hhmm else None)
 
     def skip_time(self, member_id: str, minutes: float) -> list[Outgoing]:
         """Simulator demo only: move this parent's recent data `minutes` into the past, as
@@ -141,7 +191,8 @@ class ConversationEngine:
     # --- consent, stop, timeouts ---
 
     def _handle_parent(self, parent: Member, msg: Incoming, now: datetime) -> list[str]:
-        t = parse.normalize(msg.text)
+        t = parse.normalize_speech(msg.text) if msg.via_voice else parse.normalize(msg.text)
+        source = "voice" if msg.via_voice else "manual"
         if parent.consent_status in ("pending", "revoked"):
             if msg.image is None and parse.is_yes(t):
                 self.store.set_consent(
@@ -161,7 +212,7 @@ class ConversationEngine:
 
         out = self._due(parent, now)
         state = self.store.get_conversation_state(parent.id)
-        return out + self._route(parent, state, msg, t, now)
+        return out + self._route(parent, state, msg, t, now, source)
 
     def _due(self, parent: Member, now: datetime) -> list[str]:
         return self._missed_repeat(parent, now) + self._expire(parent, now)
@@ -209,7 +260,13 @@ class ConversationEngine:
     # --- routing ---
 
     def _route(
-        self, parent: Member, state: ConversationState, msg: Incoming, t: str, now: datetime
+        self,
+        parent: Member,
+        state: ConversationState,
+        msg: Incoming,
+        t: str,
+        now: datetime,
+        source: str = "manual",
     ) -> list[str]:
         p = state.payload
         repeat = p.get("repeat")
@@ -226,7 +283,7 @@ class ConversationEngine:
             typed = parse.parse_typed_reading(t)
             if typed:
                 self.store.set_reading_status(p["reading_id"], "rejected", at=now)
-                return self._typed(parent, repeat, typed, now)
+                return self._typed(parent, repeat, typed, now, source)
             return [tpl.PLEASE_ANSWER.format(value=p["value"])]
 
         if state.state == AWAITING_MED_CONFIRMATION:
@@ -249,29 +306,42 @@ class ConversationEngine:
         glucose_asked = state.state == AWAITING_VALUE and p.get("type") == "glucose"
         typed = parse.parse_typed_reading(t, bare_number_is_glucose=glucose_asked)
         if typed:
-            return self._typed(parent, repeat, typed, now)
+            return self._typed(parent, repeat, typed, now, source)
         return self._general(parent, t, now)
 
     def _general(self, parent: Member, t: str, now: datetime) -> list[str]:
+        lang = phrases.lang_of(parent.language)
         if parse.is_yes(t) or parse.is_no(t) or t in parse.TAKEN:
             events = [
                 e
                 for e in self.store.list_dose_events(
                     parent.id, since=now - DOSE_REPLY_WINDOW, until=now + timedelta(minutes=15)
                 )
-                if e.status == "pending"
+                # unanswered: still pending, or marked missed by the 30-min follow-up
+                if e.status == "pending" or (e.followed_up_at and e.responded_at is None)
             ]
             if not events:
                 return [tpl.NOTHING_TO_CONFIRM]
             status = "missed" if parse.is_no(t) else "taken"
             for e in events:
                 self.store.set_dose_status(e.id, status, at=now)
-            names = sorted({self.store.get_medicine(e.medicine_id).brand for e in events})
+                if status == "taken":
+                    self._use_stock(e.medicine_id)
+            names = tpl.join_names(
+                sorted({self.store.get_medicine(e.medicine_id).brand for e in events})
+            )
             template = tpl.DOSE_SKIPPED if status == "missed" else tpl.DOSE_TAKEN
-            return [template.format(names=tpl.join_names(names))]
+            phrase = "dose_skipped" if status == "missed" else "dose_taken"
+            return [Said(template.format(names=names), phrases.say(phrase, lang, names=names))]
         if t in parse.HELP:
             return [tpl.HELP]
-        return [tpl.OFF_TOPIC]
+        return [Said(tpl.OFF_TOPIC, phrases.say("off_topic", lang))]
+
+    def _use_stock(self, medicine_id: str) -> None:
+        """A dose taken uses one dose's worth of stock (daily dose spread over the times)."""
+        med = self.store.get_medicine(medicine_id)
+        per_dose = max(1, round(med.daily_dose / max(1, len(med.times))))
+        self.store.set_medicine_stock(med.id, max(0, med.stock_count - per_dose))
 
     # --- readings ---
 
@@ -311,14 +381,20 @@ class ConversationEngine:
         )
 
     def _typed(
-        self, parent: Member, repeat: dict | None, typed: parse.TypedReading, now: datetime
+        self,
+        parent: Member,
+        repeat: dict | None,
+        typed: parse.TypedReading,
+        now: datetime,
+        source: str = "manual",
     ) -> list[str]:
+        """A typed reading, or a spoken one (source="voice"): same read-back either way."""
         values = typed.model_dump(exclude={"type"})
         shown = None
         if typed.glucose_unit == "mmol/L" and typed.glucose_value is not None:
             shown = f"{typed.glucose_value:g} mmol/L"
         return self._new_reading(
-            parent, repeat, typed.type, values, source="manual", now=now, shown=shown
+            parent, repeat, typed.type, values, source=source, now=now, shown=shown
         )
 
     def _new_reading(
@@ -353,7 +429,16 @@ class ConversationEngine:
             "expires_at": _iso(now + ANSWER_TIMEOUT),
         }
         self._save(parent, AWAITING_CONFIRMATION, payload, repeat)
-        return [tpl.read_back(value, unusual=bool(check.flags))]
+        lang = phrases.lang_of(parent.language)
+        spoken = phrases.spoken_reading(
+            reading.type,
+            lang,
+            systolic=reading.systolic,
+            diastolic=reading.diastolic,
+            glucose=(shown or f"{reading.glucose_mgdl:g}") if reading.glucose_mgdl else None,
+        )
+        voice = phrases.say("read_back", lang, spoken=spoken)
+        return [Said(tpl.read_back(value, unusual=bool(check.flags)), voice)]
 
     def _confirm_reading(self, parent: Member, p: dict, now: datetime) -> list[str]:
         reading = self.store.set_reading_status(p["reading_id"], "confirmed", at=now)
@@ -388,8 +473,12 @@ class ConversationEngine:
                 template = tpl.FAMILY_NOT_SHARED
             return [template.format(value=value)]
         if p.get("is_repeat"):
-            return [tpl.REPEAT_OK.format(value=value)]
-        return [tpl.SAVED.format(value=value)]
+            return [Said(tpl.REPEAT_OK.format(value=value), self._saved_voice(parent))]
+        return [Said(tpl.SAVED.format(value=value), self._saved_voice(parent))]
+
+    @staticmethod
+    def _saved_voice(parent: Member) -> Voice:
+        return phrases.say("saved", phrases.lang_of(parent.language))
 
     def _reject_reading(self, parent: Member, p: dict, now: datetime) -> list[str]:
         reading = self.store.set_reading_status(p["reading_id"], "rejected", at=now)
@@ -472,9 +561,13 @@ class ConversationEngine:
         """Nothing waiting for an answer: idle, or still waiting for a repeat BP reading."""
         self._save(parent, AWAITING_REPEAT if repeat else IDLE, {}, repeat)
 
-    def _to(self, member: Member, text: str) -> Outgoing:
+    def _to(self, member: Member, text: str, voice: Voice | None = None) -> Outgoing:
         return Outgoing(
-            channel=member.channel, to_ref=member.channel_ref, member_id=member.id, text=text
+            channel=member.channel,
+            to_ref=member.channel_ref,
+            member_id=member.id,
+            text=str(text),
+            voice=voice,
         )
 
     def drain_outbox(self) -> list[Outgoing]:
@@ -482,6 +575,7 @@ class ConversationEngine:
         out = []
         for m in self.store.take_outbox():
             member = self.store.get_member(m.member_id)
+            voice = Voice(text=m.voice_text, lang=m.voice_lang or "en") if m.voice_text else None
             out.append(
                 Outgoing(
                     channel=member.channel,
@@ -489,6 +583,7 @@ class ConversationEngine:
                     member_id=member.id,
                     text=m.text,
                     kind=m.kind,
+                    voice=voice,
                 )
             )
         return out

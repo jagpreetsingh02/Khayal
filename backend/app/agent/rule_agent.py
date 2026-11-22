@@ -137,6 +137,28 @@ class RuleAgent:
         outcome = ReadingOutcome(level="amber", rule="bp_severe_no_repeat")
         return self._alert(parent, reading, outcome, "No repeat BP reading within 15 minutes.")
 
+    def after_missed_doses(self, parent: Member) -> ReadingOutcome:
+        """Scheduler: doses were marked missed today; the server checks the doctor-set count
+        (2+ by default) and sends AMBER at most once a day."""
+        outcome = ReadingOutcome(level="amber", rule="missed_doses_per_day")
+        try:
+            result = self.call_tool(
+                parent,
+                "alert_family",
+                {"level": "amber", "reason": "Medicine reminders marked missed today."},
+            )
+        except Exception as exc:  # below the limit -> ToolError "no limit ... crossed"
+            log.info("missed-doses alert not sent for %s: %s", parent.id, exc)
+            outcome.level = "none"
+            return outcome
+        outcome.alert_sent = bool(result.get("sent") or result.get("already_sent"))
+        outcome.not_shared = bool(result.get("not_shared"))
+        return outcome
+
+    def weekly_summary(self, parent: Member) -> str:
+        """The descriptive 7-day summary (server-written, filtered for diagnosis words)."""
+        return str(self.call_tool(parent, "weekly_summary", {}).get("text", ""))
+
     def request_refill(self, parent: Member, medicine: Medicine) -> dict[str, Any]:
         """Low stock: ask the family for one month's supply. The tool only creates a
         pending request; approval happens on the dashboard, never here. Raises ToolError

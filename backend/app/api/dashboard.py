@@ -45,6 +45,7 @@ from app.storage.models import (
     Sharing,
     utcnow,
 )
+from app.voice import phrases
 
 TZ = ZoneInfo("Asia/Kolkata")
 RANGE_DAYS = {"7d": 7, "14d": 14, "30d": 30, "90d": 90}
@@ -215,8 +216,15 @@ def _sharing(store: Store, me: Member, parent: Member) -> dict[str, Any]:
     }
 
 
-def _family_message(store: Store, member: Member, text: str) -> None:
-    store.add_outbox(OutboxMessage(member_id=member.id, text=text))
+def _family_message(store: Store, member: Member, text: str, voice=None) -> None:
+    store.add_outbox(
+        OutboxMessage(
+            member_id=member.id,
+            text=text,
+            voice_text=voice.text if voice else None,
+            voice_lang=voice.lang if voice else None,
+        )
+    )
 
 
 # --- login (no session needed) ---
@@ -443,7 +451,12 @@ def _decide(request: Request, me: Member, refill_id: str, approve: bool) -> dict
             {"refill_id": refill.id, "pharmacy": DEMO_LABEL},
             {"status": refill.status, "pharmacy_ref": ref, "demo": True},
         )
-        _family_message(store, parent, tpl.REFILL_APPROVED.format(brand=med.brand, qty=refill.qty))
+        _family_message(
+            store,
+            parent,
+            tpl.REFILL_APPROVED.format(brand=med.brand, qty=refill.qty),
+            phrases.say("refill_approved", parent.language, brand=med.brand),
+        )
         others = (
             f"{me.name} approved the refill for {med.brand} x{refill.qty}. Sent to the "
             "demo partner pharmacy (demo, no real order)."
@@ -471,7 +484,7 @@ def reject_refill(refill_id: str, request: Request, me: Me):
 
 def _today_doses(store: Store, parent: Member) -> list[dict[str, Any]]:
     """Today's schedule (Asia/Kolkata) from reminder times, with any recorded responses."""
-    now = datetime.now(TZ)
+    now = utcnow().astimezone(TZ)
     start = datetime.combine(now.date(), datetime.min.time(), TZ)
     events = store.list_dose_events(parent.id, since=start, until=start + timedelta(days=1))
     out = []
@@ -704,6 +717,11 @@ def simulate_low_stock(parent_id: str, body: LowStockBody, request: Request, me:
         raise HTTPException(409, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(502, f"Could not reach the MCP server: {type(exc).__name__}") from exc
-    _family_message(store, parent, tpl.LOW_STOCK_ASKED.format(brand=med.brand, stock=stock))
+    _family_message(
+        store,
+        parent,
+        tpl.LOW_STOCK_ASKED.format(brand=med.brand, stock=stock),
+        phrases.say("low_stock", parent.language, brand=med.brand),
+    )
     svc.flush_outbox()
     return {"requested": True, "tool_result": result}

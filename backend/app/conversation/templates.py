@@ -22,6 +22,10 @@ PAUSED = "Care Circle is paused. Reply START to turn it on again."
 RESUMED = "Care Circle is on again. " + CONSENT_THANKS
 
 OFF_TOPIC = "I can only help with readings and medicines."
+VOICE_UNCLEAR = (
+    "Sorry, I could not understand the voice note. Please say it again, or type it "
+    "(for example 142/88 or sugar 110)."
+)
 HELP = (
     "Send a photo of your BP or sugar meter screen, or of a medicine strip. You can also "
     "type a reading, like 142/88 or sugar 110."
@@ -114,7 +118,8 @@ REMINDER_SET = "Done. I will remind you to take {name} at {times} every day."
 REMINDER_FAILED = "I saved {name}, but could not set the reminder just now. Please try again later."
 NO_REMINDER = "OK, no reminder set."
 
-DOSE_REMINDER = "Time for {names}. Reply 1 taken / 2 skipped"
+DOSE_REMINDER = "{time}: time for {names}. Reply 1 when taken, 2 if skipped."
+DOSE_FOLLOWUP = "Did you take {names} ({time})? Reply 1 if you have taken it."
 DOSE_TAKEN = "Noted: {names} taken. Thank you."
 DOSE_SKIPPED = "Noted: {names} not taken."
 
