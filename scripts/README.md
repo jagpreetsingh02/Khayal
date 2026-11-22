@@ -2,7 +2,12 @@
 
 Run from `backend/` so they use its environment and `DATABASE_URL`.
 
-- `seed_demo.py`: wipe the local DB and seed a demo family (parent Kamla, two children),
+- `start.py`: run the MCP server and the API together (the demo). Simulator at
+  http://localhost:8000/simulator. `uv run python ../scripts/start.py [--port 8000]`
+- `add_member.py`: register a Telegram user id or WhatsApp number as a parent/child of the
+  demo family (server-side sender mapping).
+  `uv run python ../scripts/add_member.py --channel telegram --ref 123456789 --role parent --name Me`
+- `seed_demo.py`: (stop the servers first) wipe the local DB and seed a demo family (parent Kamla, two children),
   four medicines, doctor-set limits and 14 days of BP / glucose readings and dose events.
   `uv run python ../scripts/seed_demo.py`
 - `mcp_client_demo.py`: connect to the running MCP server with a real MCP client
