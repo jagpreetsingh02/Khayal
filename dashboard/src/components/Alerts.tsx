@@ -4,7 +4,7 @@ import { post } from '../api'
 import type { Alert } from '../api'
 import { usePoll } from '../hooks'
 import { ago, istWhen } from '../time'
-import { Card, Empty, ErrorNote, LevelBadge, Skeleton } from './ui'
+import { Card, Empty, ErrorNote, LevelBadge, RedOnlyNote, Skeleton } from './ui'
 
 export function AlertItem({ alert, onChange }: { alert: Alert; onChange: () => void }) {
   const [busy, setBusy] = useState(false)
@@ -45,7 +45,15 @@ export function AlertItem({ alert, onChange }: { alert: Alert; onChange: () => v
   )
 }
 
-export function AlertsPage({ parentId }: { parentId: string }) {
+export function AlertsPage({
+  parentId,
+  parent,
+  shared,
+}: {
+  parentId: string
+  parent: string
+  shared: boolean
+}) {
   const { data, error, reload } = usePoll<{ alerts: Alert[] }>(
     `/alerts?parent_id=${parentId}&days=30`,
   )
@@ -54,6 +62,7 @@ export function AlertsPage({ parentId }: { parentId: string }) {
   return (
     <div className="page">
       <ErrorNote error={error} />
+      {!shared && <RedOnlyNote parent={parent} />}
       <Card title={`Needs a look${open.length ? ` (${open.length})` : ''}`}>
         {!data ? (
           <Skeleton />

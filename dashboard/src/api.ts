@@ -87,6 +87,7 @@ export interface Overview {
   today_doses?: Dose[]
   pending_refills?: Refill[]
   active_alerts?: Alert[]
+  alerts_shared?: boolean // false: the parent shares red alerts only
 }
 
 export interface Medicine {

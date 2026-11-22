@@ -118,7 +118,11 @@ function ThresholdEditor({ parentId, parent }: { parentId: string; parent: strin
 
 const SHARE_ROWS: { key: Category; title: string; text: string }[] = [
   { key: 'readings', title: 'Readings', text: 'BP and glucose numbers, charts and the doctor’s limits' },
-  { key: 'alerts', title: 'Alerts', text: 'Amber and red alerts on the dashboard and in family chats' },
+  {
+    key: 'alerts',
+    title: 'Alerts',
+    text: 'Amber alerts on the dashboard and in family chats. Red alerts always reach the family.',
+  },
   { key: 'medicines', title: 'Medicines', text: 'Medicines, reminders, doses and refill requests' },
 ]
 

@@ -121,6 +121,16 @@ export function NotShared({ parent, category }: { parent: string; category: Cate
   )
 }
 
+export function RedOnlyNote({ parent }: { parent: string }) {
+  return (
+    <p className="red-only">
+      <Icon name="lock" size={16} />
+      {parent} has not shared alerts. Red alerts always reach the family, so only those are
+      shown here.
+    </p>
+  )
+}
+
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="empty">{children}</p>
 }
