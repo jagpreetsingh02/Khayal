@@ -60,8 +60,10 @@ cp .env.example .env            # defaults to APP_MODE=mock
 cd backend
 uv sync
 uv run pytest                   # tests
+uv run python ../scripts/seed_demo.py              # demo family + 14 days of readings
 uv run uvicorn app.main:app --reload --port 8000   # http://localhost:8000/health
 uv run python -m mcp_server.server                 # MCP server on http://localhost:8001/mcp
+uv run python ../scripts/mcp_client_demo.py        # (new terminal) list MCP tools, call log_reading
 
 # Dashboard (new terminal)
 cd dashboard
