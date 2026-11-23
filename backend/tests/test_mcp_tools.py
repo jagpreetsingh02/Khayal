@@ -34,12 +34,12 @@ class World:
         self.store = SQLiteStore(":memory:")
         self.outbox = OutboxNotifier()
         self.server = create_server(self.store, self.outbox)
-        fam = self.store.add_family(Family(name="Sharma"))
+        fam = self.store.add_family(Family(name="Gowda"))
         self.parent = self.store.add_member(
             Member(
                 family_id=fam.id,
                 role="parent",
-                name="Kamla",
+                name="Lakshmi",
                 channel="simulator",
                 channel_ref=PARENT_REF,
                 consent_status="granted",

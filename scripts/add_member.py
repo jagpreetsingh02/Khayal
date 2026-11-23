@@ -5,7 +5,7 @@ pair stored in `members`. Examples (run from backend/, servers may be running):
 
     # your Telegram id: send /id to the bot
     uv run python ../scripts/add_member.py --channel telegram --ref 123456789 \\
-        --role parent --name "Kamla (Telegram)"
+        --role parent --name "Lakshmi (Telegram)"
     uv run python ../scripts/add_member.py --channel twilio --ref +919812345678 \\
         --role child --name "Ravi (WhatsApp)"
 

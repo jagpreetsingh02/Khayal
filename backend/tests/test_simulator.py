@@ -86,7 +86,7 @@ def test_golden_path_in_mock_mode(sim):
     s = say(sim, "1")
     assert last_reply(s).startswith(tpl.RED_REPEAT.format(value="186/122, pulse 92"))
     for texts in child_texts(s):
-        assert len(texts) == 1 and texts[0].startswith("RED alert for Kamla Sharma")
+        assert len(texts) == 1 and texts[0].startswith("RED alert for Lakshmi Gowda")
     assert "alert_family" in tools_called(s)
     assert any(i["direction"] == "note" for i in s["children"][0]["feed"])  # "5 minutes later"
 
@@ -110,7 +110,7 @@ def test_no_repeat_for_15_minutes_sends_amber_to_children(sim):
     s = state(sim)
     assert last_reply(s) == tpl.NO_REPEAT_FAMILY_TOLD.format(value="186/122, pulse 92")
     for texts in child_texts(s):
-        assert len(texts) == 1 and texts[0].startswith("AMBER alert for Kamla Sharma: BP 186/122")
+        assert len(texts) == 1 and texts[0].startswith("AMBER alert for Lakshmi Gowda: BP 186/122")
         assert "rest" not in texts[0].lower()
 
 

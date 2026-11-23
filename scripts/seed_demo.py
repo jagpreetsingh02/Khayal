@@ -46,12 +46,12 @@ def seed(store: Store, now: datetime | None = None, rng_seed: int = 7) -> dict[s
     now = (now or datetime.now(IST)).astimezone(IST)
     consent_at = now - timedelta(days=DAYS + 2)
 
-    family = store.add_family(Family(name="Sharma family"))
+    family = store.add_family(Family(name="Gowda family"))
     parent = store.add_member(
         Member(
             family_id=family.id,
             role="parent",
-            name="Kamla Sharma",
+            name="Lakshmi Gowda",
             channel="simulator",
             channel_ref=PARENT_REF,
             language="en",
@@ -72,7 +72,7 @@ def seed(store: Store, now: datetime | None = None, rng_seed: int = 7) -> dict[s
                 consent_at=consent_at,
             )
         )
-        for name, ref in zip(("Ravi Sharma", "Priya Sharma"), CHILD_REFS, strict=True)
+        for name, ref in zip(("Ravi Gowda", "Priya Gowda"), CHILD_REFS, strict=True)
     ]
 
     # Doctor-set limits (same values as the defaults, but labelled "set by your doctor").

@@ -47,8 +47,8 @@ Everything is on one port; **Ctrl+C** stops it.
 | Simulator | **🖼️** → **bp high** → **1** | Asked to rest 5 minutes and measure again; the family is **not** alerted yet |
 | Simulator | **⏩ Skip 5 minutes** → **🖼️** → **bp high** → **1** | **RED alert** in Ravi's and Priya's phones, plus an **Incoming call** card |
 | Simulator (demo clock) | **⏰ Next reminder**, then **⏩ 30 min** without replying (repeat once if needed) | A medicine reminder with an Indian English voice note (▶), one follow-up, then an **AMBER** "2 medicine reminders were marked missed" alert to the children |
-| http://localhost:8000/dashboard/ → token `change-me` → **Continue** → **Ravi Sharma** | **Medicines** → **Simulate low stock (demo)** on Telma 40 | The AI calls `request_refill` over MCP; the children get "Refill request…" |
-| Dashboard | **Overview** → **Approve** | Kamla's chat: "Refill approved for Telma 40 (30); your pharmacy will confirm." |
+| http://localhost:8000/dashboard/ → token `change-me` → **Continue** → **Ravi Gowda** | **Medicines** → **Simulate low stock (demo)** on Telma 40 | The AI calls `request_refill` over MCP; the children get "Refill request…" |
+| Dashboard | **Overview** → **Approve** | Lakshmi's chat: "Refill approved for Telma 40 (30); your pharmacy will confirm." |
 | Dashboard | **What the AI did** | Every MCP tool call; **Approvals by the AI: 0**; `approve_refill: does not exist` |
 
 The full click-by-click video script is in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md). Checked
@@ -196,7 +196,7 @@ After the quick start above (full script with timings: [docs/DEMO_SCRIPT.md](doc
 
 - **Medicine strip:** 🖼️ → `strip telma40` → "Telma 40 = Telmisartan 40 mg. Remind at 8 PM?" →
   **1** → reminder set.
-- **Parent-first sharing:** on the dashboard, **Sign out** → sign in as **Kamla** (the parent) →
+- **Parent-first sharing:** on the dashboard, **Sign out** → sign in as **Lakshmi** (the parent) →
   **Limits & sharing** → turn off *Medicines*. Signed in as Ravi again, medicines and refills
   say "not shared". (Turning off *Alerts* hides amber alerts; red alerts still reach the family.)
 - **Voice:** 🗣️ → “I took my medicine” after a reminder marks the dose taken and answers with a

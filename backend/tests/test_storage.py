@@ -26,12 +26,12 @@ def store():
 
 @pytest.fixture
 def parent(store):
-    fam = store.add_family(Family(name="Sharma"))
+    fam = store.add_family(Family(name="Gowda"))
     return store.add_member(
         Member(
             family_id=fam.id,
             role="parent",
-            name="Kamla",
+            name="Lakshmi",
             channel="simulator",
             channel_ref="+911111111111",
         )
@@ -47,7 +47,7 @@ def test_path_from_url():
 
 def test_family_and_member_roundtrip(store, parent):
     assert store.get_member(parent.id) == parent
-    assert store.get_family(parent.family_id).name == "Sharma"
+    assert store.get_family(parent.family_id).name == "Gowda"
     child = store.add_member(
         Member(
             family_id=parent.family_id,

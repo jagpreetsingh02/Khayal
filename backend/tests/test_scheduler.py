@@ -44,12 +44,12 @@ class World:
     def __init__(self, language: str = "hi"):
         self.store = SQLiteStore(":memory:")
         _STORE.append(self.store)
-        fam = self.store.add_family(Family(name="Sharma"))
+        fam = self.store.add_family(Family(name="Gowda"))
         self.parent = self.store.add_member(
             Member(
                 family_id=fam.id,
                 role="parent",
-                name="Kamla",
+                name="Lakshmi",
                 channel="simulator",
                 channel_ref=PARENT,
                 language=language,
@@ -236,7 +236,7 @@ def test_two_missed_doses_send_one_amber_alert(w):
     w.run()  # Telma + Glycomet missed -> 2 today
     amber = [t for t in w.texts(CHILD) if t.startswith("AMBER alert")]
     assert amber == [
-        "AMBER alert for Kamla: 2 medicine reminders were marked missed on "
+        "AMBER alert for Lakshmi: 2 medicine reminders were marked missed on "
         + set_clock("08:30").strftime("%d %b")
         + "."
     ]
@@ -269,7 +269,7 @@ def test_low_stock_requests_refill_through_mcp_never_approves(w):
     assert refill.status == "pending_approval" and refill.qty == 30
     assert ("agent", "request_refill") in w.tools()
     assert not any("approve" in tool for _, tool in w.tools())
-    assert any("Refill request for Kamla: Telma 40 x30" in t for t in w.texts(CHILD))
+    assert any("Refill request for Lakshmi: Telma 40 x30" in t for t in w.texts(CHILD))
     parent_msg = w.feed(PARENT)[-1]
     assert "running low" in parent_msg.text and parent_msg.voice
     set_clock("10:05")
@@ -314,7 +314,7 @@ def test_weekly_summary_goes_to_family_on_sunday_evening_once(w):
     w.run()
     set_clock("19:30", day)
     w.run()
-    summaries = [x for x in w.texts(CHILD) if x.startswith("Weekly summary for Kamla")]
+    summaries = [x for x in w.texts(CHILD) if x.startswith("Weekly summary for Lakshmi")]
     assert len(summaries) == 1
     assert ("agent", "weekly_summary") in w.tools()
 

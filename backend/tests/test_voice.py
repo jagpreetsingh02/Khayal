@@ -125,7 +125,7 @@ def test_spoken_reading_still_gets_the_read_back(w):
     w.svc.handle("simulator", Ev(voice_sample="bp_reading_en"))
     reply = w.feed(PARENT)[-1]
     assert reply.text.startswith("I read 142/88") and "correct?" in reply.text
-    assert reply.voice and "ऊपर 142, नीचे 88" in reply.voice_text  # Kamla speaks Hindi
+    assert reply.voice and "ऊपर 142, नीचे 88" in reply.voice_text  # Lakshmi speaks Hindi
     [reading] = w.store.list_readings(w.parent.id)
     assert reading.status == "unconfirmed" and reading.source == "voice"
     voice_in = [i for i in w.sim.feed(PARENT) if i.direction == "in"][-1]
@@ -344,8 +344,8 @@ def test_confirmed_red_reading_rings_the_family(w, calls_on):
     w.svc.flush_outbox()
     [card] = [i for i in w.feed(CHILD) if i.kind == "voice_call"]
     assert card.voice and card.voice_mock and card.voice_lang == "en"
-    assert card.text.startswith("This is Khayal with an urgent alert about Kamla.")
-    assert "190/124" in card.text and card.text.endswith("Please call Kamla now.")
+    assert card.text.startswith("This is Khayal with an urgent alert about Lakshmi.")
+    assert "190/124" in card.text and card.text.endswith("Please call Lakshmi now.")
     assert "If you feel unwell" not in card.text  # parent wording stays out of the call
     assert any(t.startswith("RED alert") for t in w.texts(CHILD))
 
@@ -396,7 +396,7 @@ def test_twilio_call_only_dials_registered_twilio_numbers():
         channel="twilio",
         channel_ref="whatsapp:+919811112222",
     )
-    assert provider.call(real, Voice(text="Call Kamla now", lang="hi"), "/voice/abc.mp3", False)
+    assert provider.call(real, Voice(text="Call Lakshmi now", lang="hi"), "/voice/abc.mp3", False)
     form = dict(httpx.QueryParams(fake.requests[0].content.decode()))
     assert form["To"] == "+919811112222" and form["From"] == "+14155550100"
     assert form["Twiml"] == "<Response><Play>https://demo.example/voice/abc.mp3</Play></Response>"

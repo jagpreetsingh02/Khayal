@@ -22,12 +22,12 @@ PARENT = "+919800000001"
 
 def make_store() -> tuple[SQLiteStore, Member]:
     store = SQLiteStore(":memory:")
-    fam = store.add_family(Family(name="Sharma"))
+    fam = store.add_family(Family(name="Gowda"))
     parent = store.add_member(
         Member(
             family_id=fam.id,
             role="parent",
-            name="Kamla",
+            name="Lakshmi",
             channel="simulator",
             channel_ref=PARENT,
             consent_status="granted",
@@ -63,7 +63,7 @@ def test_conversation_alerts_family_through_mcp_over_http():
 
     out = over_http(store, check)
     family = [o.text for o in out if o.member_id != parent.id]
-    assert len(family) == 1 and family[0].startswith("RED alert for Kamla")
+    assert len(family) == 1 and family[0].startswith("RED alert for Lakshmi")
     [entry] = store.list_audit(tool="alert_family")
     assert entry.parent_id == parent.id  # identity came from _meta over HTTP
 

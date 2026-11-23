@@ -12,12 +12,12 @@ from mcp_server.server import create_server
 
 def family(parent_channel: str, parent_ref: str, child_channel: str, child_ref: str):
     store = SQLiteStore(":memory:")
-    fam = store.add_family(Family(name="Sharma"))
+    fam = store.add_family(Family(name="Gowda"))
     parent = store.add_member(
         Member(
             family_id=fam.id,
             role="parent",
-            name="Kamla",
+            name="Lakshmi",
             channel=parent_channel,
             channel_ref=parent_ref,
             consent_status="granted",

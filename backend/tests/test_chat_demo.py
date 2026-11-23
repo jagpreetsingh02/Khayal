@@ -13,8 +13,8 @@ def test_scripted_demo_reaches_red_alert_and_reminder(capsys):
     assert chat_demo.main(["--demo", "--reader", "mock"]) == 0
     out = capsys.readouterr().out
     assert "Reply 1 (Haan / Yes) to agree" in out
-    assert "[to Ravi] RED alert for Kamla" in out
-    assert out.index("[to Ravi] RED alert") < out.index("[to Ravi] AMBER alert for Kamla: BP")
+    assert "[to Ravi] RED alert for Lakshmi" in out
+    assert out.index("[to Ravi] RED alert") < out.index("[to Ravi] AMBER alert for Lakshmi: BP")
     assert "No repeat reading was taken within 15 minutes" in out
     assert "Telma 40 = Telmisartan 40 mg. Remind at 8 PM?" in out
     assert out.rstrip().endswith("I can only help with readings and medicines.")

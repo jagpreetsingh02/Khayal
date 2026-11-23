@@ -1,6 +1,6 @@
 """Try the parent conversation in the terminal (the web simulator is at /simulator).
 
-Uses a throwaway in-memory database with one parent (Kamla, consent not yet given) and two
+Uses a throwaway in-memory database with one parent (Lakshmi, consent not yet given) and two
 children, so it never touches your local DB. Because the DB lives in this process, the MCP
 server runs in-process here too; the API uses the real MCP server over HTTP.
 
@@ -62,8 +62,8 @@ DEMO_SCRIPT = [
 class Chat:
     def __init__(self, reader_name: str) -> None:
         self.store = SQLiteStore(":memory:")
-        fam = self.store.add_family(Family(name="Sharma"))
-        people = [("parent", "Kamla", PARENT_REF), ("child", "Ravi", "+919800000002"),
+        fam = self.store.add_family(Family(name="Gowda"))
+        people = [("parent", "Lakshmi", PARENT_REF), ("child", "Ravi", "+919800000002"),
                   ("child", "Priya", "+919800000003")]  # fmt: skip
         for role, name, ref in people:
             self.store.add_member(
@@ -114,13 +114,13 @@ def main(argv: list[str] | None = None) -> int:
     chat = Chat(args.reader)
     if args.demo:
         for line in DEMO_SCRIPT:
-            print(f"Kamla> {line}")
+            print(f"Lakshmi> {line}")
             chat.run(line)
         return 0
     print(__doc__.split("Commands:")[1].strip(), "\n")
     while True:
         try:
-            line = input("Kamla> ")
+            line = input("Lakshmi> ")
         except (EOFError, KeyboardInterrupt):
             return 0
         if line.strip() in ("/quit", "/exit"):
