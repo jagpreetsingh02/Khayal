@@ -5,45 +5,40 @@ Spec: `docs/PROJECT_BRIEF.md` (read only the sections you need). Rules: `CLAUDE.
 Repo: https://github.com/jagpreetsingh02/care-circle (public)
 
 ## Current status
-- Current phase: **Phase 5 — voice + reminders: DONE** (merged to `main`, tag `phase-5-done`)
+- Current phase: **Phase 6 — polish + AWS design: DONE** (branch `phase-6-polish-aws`, merged to
+  `main`, tag `phase-6-done`). No AWS resource created; nothing deployed.
 - Current branch: `main`
-- Next step: **Phase 6 — AWS + polish** (`phase-6-aws-polish` from `main`). First task, before any
-  code: **ask the user** which deploy path and whether paid AWS resources are OK (brief §9 Phase 6:
-  "Ask the user before creating any paid resource"; §11 costs). Simplest viable first: one small
-  host (API + MCP server + built dashboard on one port) in ap-south-1, SQLite on disk, then
-  DynamoDB/Bedrock only if wanted. Also Phase 6: accuracy test on real photos -> README number,
-  MCP shared-secret header (localhost bind today), voice notes on Telegram/WhatsApp (needs a
-  public audio URL). Read brief §4.1, §9 (Phase 6), §11.
+- Next step: **submission support only** (deadline 24 Nov). Wait for the user's inputs below; then
+  optional small chunks, each on its own branch: (a) ElevenLabs live check once a voice id is
+  set; (b) accuracy run once labelled real photos are in `samples/real/`; (c) AWS deploy only if
+  the user approves paid resources (design in `docs/AWS_ARCHITECTURE.md`).
 - Optional, still open: LLM agent via Groq tool calling behind `AGENT=rules|llm`.
 
 ## Phase checklist
 - [x] Phase 0 — setup · [x] Phase 1 — MCP core + storage · [x] Phase 2 — reader + read-back
 - [x] Phase 3 — channels + agent · [x] Phase 4 — dashboard + approve refill
-- [x] Phase 5 — voice + reminders (`phase-5-voice-alerts`)
-- [ ] Phase 6 — AWS + polish + accuracy test (`phase-6-aws-polish`)
+- [x] Phase 5 — voice + reminders · [x] Phase 6 — quick start, demo script, AWS design, hygiene
 
 ## Blockers / needs from user
-- **Your `.env` has `VOICE=none`** (copied from the old example): set `VOICE=mock` (and
-  `CALL_PROVIDER=mock`) to see voice notes and call cards, or `VOICE=elevenlabs` with keys.
-- **ElevenLabs API key + a voice id** (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`) for real voice
-  notes + Scribe. Never called live yet: confirm `eleven_v4_turbo` speaks Hindi well with the chosen
-  voice and that `language_code` is accepted (docs disagree whether unsupported codes error).
-- **Team names** for the README "Team" section (currently "To be added").
-- **Real photos** for an honest accuracy number: 10+ BP/glucometer screens (some glare/angle) and
-  2-3 strips, labelled as in `samples/README.md`; then `accuracy_test.py --reader groq --real-only`
-  (prints a token estimate and asks first; needs Groq quota, which resets daily).
-- Phase 6 decision: deploy target and whether paid AWS resources are allowed.
-- Set your own `DASHBOARD_DEMO_TOKEN` before sharing a running dashboard (default `change-me`).
-- Optional: Telegram bot token; Twilio not called live (WhatsApp webhook, template SID, and for
-  red-alert calls `CALL_PROVIDER=twilio` + `TWILIO_CALL_FROM` — trial accounts may only call
-  verified numbers).
+- **`ELEVENLABS_VOICE_ID` is empty** in `.env` (key is set): pick a voice in ElevenLabs and paste
+  its id; then do ONE tiny Hindi TTS + STT check and confirm `language_code` handling.
+- **Real photos** for an accuracy number: none yet (`samples/real/` does not exist).
+  `samples/generated_medical_test_images_jpg/` (24 AI-generated images, untracked, unlabelled) is
+  NOT real and must not produce a published number. Label 10+ real BP/glucometer photos per
+  `samples/README.md`, then `accuracy_test.py --reader groq --real-only` (asks first).
+- Other team members' names for README "Team" (only Jagpreet listed, team SHERRR).
+- GitHub repo description + topics (suggested in the Phase 6 summary; set in repo settings).
+- AWS: deploy only if the user approves paid resources; Bedrock model + AgentCore availability in
+  ap-south-1 unconfirmed.
+- Set your own `DASHBOARD_DEMO_TOKEN` before sharing a running dashboard (still `change-me`).
+- Optional: Telegram bot token; Twilio WhatsApp/calls never tested live.
 
 ## Keys / accounts available
 - Groq: **yes** (vision verified live; daily quota used up 23 Nov by test runs, fixed since)
-  · Telegram bot: no · Twilio: in `.env`, unverified · ElevenLabs: no · AWS: no
+  · Telegram bot: no · Twilio: in `.env`, unverified · ElevenLabs: key yes, voice id no · AWS: no
 
 ## How to run (current)
-- Once: `cd dashboard && npm install && npm run build`. Backend: `cd backend && uv sync && uv run
+- Once: `cd dashboard && npm ci && npm run build` (Node 20.19+/22.12+). Backend: `cd backend && uv sync && uv run
   pytest` (387 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
 - **Demo: `uv run python ../scripts/start.py --seed`** -> http://localhost:8000/simulator and
   /dashboard/ (token `change-me`). Simulator: ⏰ Next reminder / ⏩ 30 min / ⏩ 1 day (demo clock),
@@ -55,7 +50,8 @@ Repo: https://github.com/jagpreetsingh02/care-circle (public)
 
 ## Tech notes (verified versions)
 - uv backend (Python 3.14 local, >=3.11). FastAPI 0.165, **FastMCP 4.2.4**, pydantic 2.14,
-  pydantic-settings 2.16 (python-dotenv comes with it), pytest 9.2, ruff 0.17, httpx 0.28.
+  pydantic-settings 2.16 (python-dotenv comes with it), pytest 9.2, ruff 0.17, httpx 0.28,
+  tzdata (needed on Windows: no system tz db; check with `PYTHONTZPATH= uv run pytest`).
 - FastMCP 4: `mcp.run(transport="http")`; tests via `fastmcp.Client(mcp)` + `asyncio.run`;
   `_meta` = `ctx.request_context.meta`; audit + clock sync in `Middleware.on_call_tool`.
 - Dashboard: Vite 8 (`base: '/dashboard/'`), React 19, TS 7, Recharts 3, oxlint (no refs/Date.now
@@ -88,6 +84,8 @@ Repo: https://github.com/jagpreetsingh02/care-circle (public)
   need `doctor_confirmed`, ranges + ordering. **Red alerts always reach the family** even if alerts
   aren't shared (user decision); amber respects sharing.
 - 2026-11-23: Live tests opt-in (`RUN_LIVE_TESTS=1`); accuracy_test warns + estimates tokens.
+- 2026-11-23 (Ph 6): branch named `phase-6-polish-aws` (user's request). Docs state plainly
+  that nothing runs on AWS; Bedrock reader and DynamoDB store are switches/stubs only.
 - 2026-11-23 (Ph 5): demo clock = shared offset in kv (`demo_clock_offset_s`), `utcnow()` adds it;
   zero in aws mode. Scheduler jobs idempotent via DoseEvents / `store.claim(key)`. Follow-up at
   +30 min marks the dose missed (`followed_up_at`) and a later "1" still counts; taken doses use
@@ -102,6 +100,10 @@ Repo: https://github.com/jagpreetsingh02/care-circle (public)
   Voice notes only in the simulator for now (Telegram/WhatsApp get text).
 
 ## Session log (newest first, one line each)
+- 2026-11-23: Phase 6 — fresh-clone test (found + fixed: time-of-day test failure, lockfile
+  name drift, missing tzdata for Windows); README "Run it in 3 minutes"; docs/DEMO_SCRIPT.md;
+  docs/AWS_ARCHITECTURE.md (built vs design); MIT LICENSE; history checked: no secrets, one
+  author, no AI trailers. ElevenLabs + accuracy skipped (no voice id, no real photos). 387 tests.
 - 2026-11-23: Phase 5 done — scheduler (reminders, follow-up, missed-dose amber, low-stock
   refill requests, weekly summary), demo clock, voice phrases + ElevenLabs TTS/STT (mocked
   tests) + mock/Twilio calls, simulator voice/call UI + recorder, README Voice section +
