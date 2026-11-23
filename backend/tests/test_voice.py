@@ -101,6 +101,23 @@ def test_normalize_speech(said, form):
     assert parse.normalize_speech(said) == form
 
 
+def test_simulator_sample_voice_notes_are_english_and_understood():
+    from app.channels.simulator import VOICE_SAMPLES
+
+    expected = {
+        "took_medicine_en": "taken",
+        "bp_reading_en": "142/88",
+        "sugar_en": "sugar 110",
+        "bp_high_en": "186/121",
+        "yes_en": "1",
+        "weather_en": "what is the weather today",  # off-topic on purpose: fixed refusal
+    }
+    assert set(VOICE_SAMPLES) == set(expected)
+    for name, said in VOICE_SAMPLES.items():
+        assert said.isascii(), name
+        assert parse.normalize_speech(said) == expected[name], name
+
+
 # ---------- voice notes in (STT) ----------
 
 
@@ -113,7 +130,7 @@ def test_spoken_reading_still_gets_the_read_back(w):
     assert reading.status == "unconfirmed" and reading.source == "voice"
     voice_in = [i for i in w.sim.feed(PARENT) if i.direction == "in"][-1]
     assert voice_in.voice and voice_in.transcript == "My BP is 142 by 88"
-    w.svc.handle("simulator", Ev(voice_sample="yes_hi"))
+    w.svc.handle("simulator", Ev(voice_sample="yes_en"))
     assert w.store.get_reading(reading.id).status == "confirmed"
 
 
@@ -121,7 +138,7 @@ def test_spoken_taken_after_reminder(w):
     set_clock("08:00")
     w.run()
     set_clock("08:05")
-    w.svc.handle("simulator", Ev(voice_sample="took_medicine_hi"))
+    w.svc.handle("simulator", Ev(voice_sample="took_medicine_en"))
     reply = w.feed(PARENT)[-1]
     assert reply.text == "Noted: Glycomet 500 and Telma 40 taken. Thank you."
     assert reply.voice_text == "ठीक है, Glycomet 500 and Telma 40 ले ली। धन्यवाद।"
