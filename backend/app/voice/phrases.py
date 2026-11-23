@@ -61,9 +61,9 @@ PHRASES: dict[str, dict[str, str]] = {
     # Red-alert call to a family member. English carries the server's alert text; other
     # languages use a fixed sentence (no numbers) so nothing is mistranslated.
     "red_call": {
-        "en": "This is Care Circle with an urgent alert about {parent}. {reason} "
+        "en": "This is Khayal with an urgent alert about {parent}. {reason} "
         "Please call {parent} now.",
-        "hi": "यह Care Circle की ज़रूरी सूचना है। {parent} की रीडिंग डॉक्टर की तय सीमा से ऊपर "
+        "hi": "यह Khayal की ज़रूरी सूचना है। {parent} की रीडिंग डॉक्टर की तय सीमा से ऊपर "
         "है। कृपया अभी {parent} को फ़ोन करें।",
     },
 }

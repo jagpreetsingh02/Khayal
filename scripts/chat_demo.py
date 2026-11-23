@@ -107,7 +107,7 @@ class Chat:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Chat with Care Circle in the terminal.")
+    ap = argparse.ArgumentParser(description="Chat with Khayal in the terminal.")
     ap.add_argument("--reader", choices=["mock", "groq"], default="mock")
     ap.add_argument("--demo", action="store_true", help="run the scripted golden path")
     args = ap.parse_args(argv)

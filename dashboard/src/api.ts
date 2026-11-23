@@ -1,4 +1,4 @@
-// Typed client for the Care Circle dashboard API (backend/app/api/dashboard.py).
+// Typed client for the Khayal dashboard API (backend/app/api/dashboard.py).
 import { setServerNow } from './time'
 
 export type Role = 'parent' | 'child'
@@ -144,7 +144,7 @@ export class ApiError extends Error {
   }
 }
 
-const SESSION_KEY = 'care-circle-session'
+const SESSION_KEY = 'khayal-session'
 
 export function getSession(): string | null {
   try {

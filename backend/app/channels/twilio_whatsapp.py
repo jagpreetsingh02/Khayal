@@ -201,6 +201,6 @@ class TwilioWhatsAppChannel(Channel):
 
 def template_variables(text: str, now: datetime | None = None) -> dict[str, str]:
     """Fill a two-variable Sandbox template: {{1}} = what (short), {{2}} = local time."""
-    first = text.split(":", 1)[0] if text.startswith(("RED", "AMBER")) else "Care Circle update"
+    first = text.split(":", 1)[0] if text.startswith(("RED", "AMBER")) else "Khayal update"
     local = (now or utcnow()).astimezone(ZoneInfo("Asia/Kolkata"))
     return {"1": first[:60], "2": local.strftime("%d %b %H:%M")}

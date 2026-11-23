@@ -2,7 +2,7 @@
 
 from app.agent.rule_agent import RuleAgent
 from app.alerts.notifier import StoreNotifier
-from app.channels.service import CareCircleService
+from app.channels.service import KhayalService
 from app.channels.simulator import SimulatorChannel
 from app.reader.mock_reader import MockReader
 from app.storage.models import Family, Member
@@ -35,8 +35,8 @@ def family(parent_channel: str, parent_ref: str, child_channel: str, child_ref: 
     return store, parent, child
 
 
-def service(store, *channels) -> CareCircleService:
+def service(store, *channels) -> KhayalService:
     server = create_server(store, StoreNotifier(lambda: store))
-    return CareCircleService(
+    return KhayalService(
         store, MockReader(), RuleAgent(store, server), [SimulatorChannel(), *channels]
     )

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.agent.rule_agent import RuleAgent
 from app.alerts.notifier import StoreNotifier
-from app.channels.service import CareCircleService
+from app.channels.service import KhayalService
 from app.channels.simulator import SimulatorChannel
 from app.conversation import templates as tpl
 from app.demo import PARENT_REF, load_sample
@@ -21,7 +21,7 @@ from mcp_server.server import create_server
 def sim():
     store = SQLiteStore(":memory:")
     server = create_server(store, StoreNotifier(lambda: store))  # in-process for tests
-    service = CareCircleService(
+    service = KhayalService(
         store, MockReader(), RuleAgent(store, server), [SimulatorChannel(load_sample)]
     )
     with TestClient(create_app(service, tick_seconds=0)) as client:

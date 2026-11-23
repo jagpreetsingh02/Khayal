@@ -121,7 +121,7 @@ export function MedicinesPage({ parentId, demo }: { parentId: string; demo: bool
         )}
       </Card>
       <p className="footnote">
-        Reminder times are in India time. Care Circle never suggests doses or changes to
+        Reminder times are in India time. Khayal never suggests doses or changes to
         medicines.
       </p>
     </div>

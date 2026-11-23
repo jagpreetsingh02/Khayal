@@ -53,10 +53,10 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
       <div className="login-card">
         <div className="brand brand-lg">
           <span className="brand-mark" aria-hidden="true">
-            CC
+            K
           </span>
           <div>
-            <h1>Care Circle</h1>
+            <h1>Khayal</h1>
             <p>Family dashboard</p>
           </div>
         </div>

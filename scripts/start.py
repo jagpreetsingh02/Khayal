@@ -1,4 +1,4 @@
-"""Start the Care Circle demo: the MCP server and the API (web simulator + family
+"""Start the Khayal demo: the MCP server and the API (web simulator + family
 dashboard) together, on one port.
 
     cd backend
@@ -76,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"API did not start on port {args.port}.", file=sys.stderr)
             return 1
         print(
-            f"\n  Care Circle is running (APP_MODE={settings.app_mode}, "
+            f"\n  Khayal is running (APP_MODE={settings.app_mode}, "
             f"CHANNEL={settings.channel}, LLM_PROVIDER={settings.llm_provider})\n"
             f"  Simulator:  http://localhost:{args.port}/simulator\n"
             f"  Dashboard:  http://localhost:{args.port}/dashboard/"

@@ -327,7 +327,7 @@ def test_confirmed_red_reading_rings_the_family(w, calls_on):
     w.svc.flush_outbox()
     [card] = [i for i in w.feed(CHILD) if i.kind == "voice_call"]
     assert card.voice and card.voice_mock and card.voice_lang == "en"
-    assert card.text.startswith("This is Care Circle with an urgent alert about Kamla.")
+    assert card.text.startswith("This is Khayal with an urgent alert about Kamla.")
     assert "190/124" in card.text and card.text.endswith("Please call Kamla now.")
     assert "If you feel unwell" not in card.text  # parent wording stays out of the call
     assert any(t.startswith("RED alert") for t in w.texts(CHILD))

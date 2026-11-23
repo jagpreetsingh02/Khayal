@@ -44,7 +44,7 @@ ADVANCE_STEP = timedelta(minutes=5)  # "advance time" runs the jobs every 5 simu
 RED_ALERT = re.compile(r"^RED alert for (?P<parent>.+?): (?P<reason>.*)$", re.S)
 
 
-class CareCircleService:
+class KhayalService:
     def __init__(
         self,
         store: Store,
@@ -204,7 +204,7 @@ class CareCircleService:
                 log.exception("sending on %s to %s failed", msg.channel, msg.to_ref)
 
 
-def build_service(settings: Settings | None = None) -> CareCircleService:
+def build_service(settings: Settings | None = None) -> KhayalService:
     """The app's service from .env: simulator always on, plus CHANNEL=telegram / twilio."""
     settings = settings or get_settings()
     store = get_store()
@@ -219,7 +219,7 @@ def build_service(settings: Settings | None = None) -> CareCircleService:
         channels.append(TwilioWhatsAppChannel.from_settings(settings))
     agent = RuleAgent(store, settings.mcp_server_url)
     simulator = channels[0]
-    return CareCircleService(
+    return KhayalService(
         store,
         get_reader(settings),
         agent,

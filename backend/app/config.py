@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Red-alert phone call to family: mock = "Incoming call" card in the simulator.
     call_provider: Literal["none", "mock", "twilio"] = "mock"
 
-    database_url: str = "sqlite:///./care_circle.db"
+    database_url: str = "sqlite:///./khayal.db"
     mcp_server_url: str = "http://localhost:8001/mcp"
 
     groq_api_key: str = ""

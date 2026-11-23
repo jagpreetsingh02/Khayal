@@ -1,4 +1,4 @@
-# Care Circle
+# Khayal
 
 **A WhatsApp photo of any ordinary glucometer or BP monitor becomes a confirmed, logged reading
 and a family that knows. No new app, no new device.**
@@ -14,8 +14,8 @@ You need: **git**, **Python 3.11+**, **Node 20.19+ or 22.12+**, and **[uv](https
 **macOS / Linux**
 
 ```bash
-git clone https://github.com/jagpreetsingh02/care-circle.git
-cd care-circle
+git clone https://github.com/jagpreetsingh02/khayal.git
+cd khayal
 cp .env.example .env                                  # mock mode, no keys
 (cd dashboard && npm ci && npm run build)              # builds the family dashboard once
 cd backend && uv sync                                  # Python deps into backend/.venv
@@ -25,8 +25,8 @@ uv run python ../scripts/start.py --seed               # 14 days of demo data, t
 **Windows (PowerShell)**
 
 ```powershell
-git clone https://github.com/jagpreetsingh02/care-circle.git
-cd care-circle
+git clone https://github.com/jagpreetsingh02/khayal.git
+cd khayal
 Copy-Item .env.example .env
 cd dashboard; npm ci; npm run build; cd ..
 cd backend; uv sync
@@ -36,7 +36,7 @@ uv run python ..\scripts\start.py --seed
 (If PowerShell refuses to run `npm`, use Command Prompt with `copy` instead of `Copy-Item` and
 `&&` instead of `;`.)
 
-You should see `Care Circle is running (APP_MODE=mock, CHANNEL=simulator, LLM_PROVIDER=mock)`.
+You should see `Khayal is running (APP_MODE=mock, CHANNEL=simulator, LLM_PROVIDER=mock)`.
 Everything is on one port; **Ctrl+C** stops it.
 
 **Then click through it** (about 2 minutes):
@@ -61,7 +61,7 @@ Built for wHACKiest 2026, Track 1, "Make MCP Matter: Less Magic, More Utility".
 The most controlled MCP product in the room: **the model can log, remind and *request*. It
 cannot approve, prescribe or diagnose, because the approve tool does not exist on its side.**
 
-> **Intended use.** Care Circle is a medication-adherence and self-recorded-readings logbook with
+> **Intended use.** Khayal is a medication-adherence and self-recorded-readings logbook with
 > family notifications. It does not diagnose, treat or recommend dosing. Alert limits are set by
 > the parent's doctor. Not an emergency service: call 108/112.
 
@@ -89,7 +89,7 @@ cannot approve, prescribe or diagnose, because the approve tool does not exist o
 A real example: in Chennai in April 2024, an 82-year-old man living alone, with his son in the
 US, was found only after a phone call went unanswered (DT Next). No one was watching.
 
-Honest framing: Care Circle is for elders who have a smartphone with WhatsApp, or a spouse or
+Honest framing: Khayal is for elders who have a smartphone with WhatsApp, or a spouse or
 caretaker who helps. The numbers already exist on the meter screen at home; they just never
 reach the family.
 
@@ -127,7 +127,7 @@ flowchart TB
     P1["Photo of the meter screen<br/>or a medicine strip"] --> P2["Read-back:<br/>'I read 186/121. Correct? 1 / 2'"] --> P3["Parent replies 1<br/><b>CHECKPOINT 1</b>"]
   end
 
-  subgraph CORE["Care Circle core"]
+  subgraph CORE["Khayal core"]
     direction LR
     R["Vision reader<br/>strict JSON, no tools"] --> E["Read-back state machine<br/>plausibility + repeat-BP rules"]
     E --> A["Agent<br/>allowlisted tools only"]

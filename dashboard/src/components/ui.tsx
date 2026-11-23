@@ -115,7 +115,7 @@ export function NotShared({ parent, category }: { parent: string; category: Cate
         <strong>
           {parent} has not shared {CATEGORY_LABEL[category]} with the family.
         </strong>
-        <p>Care Circle is parent-first: only {parent} can change what the family sees.</p>
+        <p>Khayal is parent-first: only {parent} can change what the family sees.</p>
       </div>
     </div>
   )

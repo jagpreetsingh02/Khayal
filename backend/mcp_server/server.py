@@ -1,4 +1,4 @@
-"""Care Circle MCP server (brief §5.5).
+"""Khayal MCP server (brief §5.5).
 
 Guardrails built in:
 - The parent is resolved server-side from the request sender (see identity.py); no tool
@@ -130,9 +130,9 @@ def create_server(
     notifier = notifier or StoreNotifier(db)
 
     mcp = FastMCP(
-        "care-circle",
+        "khayal",
         instructions=(
-            "Care Circle tools for one elderly parent (resolved from the sender). Log meter "
+            "Khayal tools for one elderly parent (resolved from the sender). Log meter "
             "readings, read history and medicines, set reminders, alert family when a "
             "doctor-set limit is crossed, request refills for family approval. Never "
             "diagnose or give dosing advice."
@@ -361,7 +361,7 @@ def create_server(
         parent = parent_of(ctx)
         med = own_medicine(parent, med_id)
         if med.is_schedule_x:
-            raise ToolError("Schedule X medicines cannot be refilled through Care Circle.")
+            raise ToolError("Schedule X medicines cannot be refilled through Khayal.")
         cap = med.daily_dose * REFILL_MAX_DAYS
         if qty > cap:
             raise ToolError(f"Quantity {qty} exceeds one month's supply ({cap}).")
@@ -379,7 +379,7 @@ def create_server(
             notifier.send(
                 member,
                 f"Refill request for {parent.name}: {med.brand} x{qty}. "
-                "Approve or reject it on the Care Circle dashboard.",
+                "Approve or reject it on the Khayal dashboard.",
             )
         return {
             "refill_id": refill.id,

@@ -9,7 +9,8 @@ only, and it drives the Google Chrome already installed on the machine (channel=
 
 It first plays the golden path through the simulator API (severe BP, repeat 5+ min later
 -> red alert, low stock -> the AI requests a refill over MCP), then captures each screen,
-approves the refill as Ravi and captures the result. Output: docs/screenshots/*.png
+approves the refill as Ravi, captures the result, then a reminder with voice notes and the
+red-alert call cards. Output: docs/screenshots/*.png
 """
 
 import argparse
@@ -80,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             pg = ctx.new_page()
             pg.goto(dash)
             if session:
-                pg.evaluate(f"localStorage.setItem('care-circle-session', '{session}')")
+                pg.evaluate(f"localStorage.setItem('khayal-session', '{session}')")
             return pg
 
         def shot(pg, tab: str, name: str, wait: str, full: bool = True) -> None:
@@ -115,6 +116,27 @@ def main(argv: list[str] | None = None) -> int:
         sp.wait_for_timeout(2500)
         sp.screenshot(path=OUT / "simulator.png")
         print("saved", OUT / "simulator.png")
+
+        # Voice: jump to the next reminder (Hindi voice note), the parent answers by voice;
+        # the red-alert "Incoming call" cards stay in the children's panes.
+        c.post("/simulator/api/advance", json={"to": "next_reminder"}).raise_for_status()
+        for v in ("took_medicine_hi", "sugar_hinglish"):
+            c.post(
+                "/simulator/api/send", json={"sender_ref": PARENT_REF, "voice_sample": v}
+            ).raise_for_status()
+        sp.reload()
+        sp.wait_for_timeout(2500)
+        sp.evaluate("document.getElementById('ai').open = false")
+        # Later refill messages push the call cards up; scroll each child's feed back to it.
+        sp.evaluate(
+            """for (const c of document.querySelectorAll('.callcard')) {
+                 const box = c.parentElement, top = box.getBoundingClientRect().top;
+                 box.scrollTop += c.getBoundingClientRect().top - top - 8;
+               }"""
+        )
+        sp.wait_for_timeout(500)
+        sp.screenshot(path=OUT / "voice-and-call.png")
+        print("saved", OUT / "voice-and-call.png")
 
         login = page(PHONE, None)
         login.evaluate("localStorage.clear()")

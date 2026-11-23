@@ -17,7 +17,7 @@ from fastmcp.exceptions import ToolError
 from app.storage.base import Store
 from app.storage.models import Member
 
-SENDER_META_KEY = "care-circle/sender"
+SENDER_META_KEY = "khayal/sender"
 
 
 def sender_meta(channel: str, channel_ref: str) -> dict[str, Any]:
@@ -44,12 +44,12 @@ def resolve_parent(ctx: Context | None, store: Store) -> Member:
         raise ToolError("Unknown sender: request has no sender context.")
     member = store.find_member_by_channel(*sender)
     if member is None:
-        raise ToolError("Unknown sender: not registered with Care Circle.")
+        raise ToolError("Unknown sender: not registered with Khayal.")
     if member.role != "parent":
         raise ToolError("These tools act for a parent; the sender is not a parent.")
     if member.consent_status != "granted":
         raise ToolError(
-            f"Consent is {member.consent_status} for this parent: Care Circle does not log, "
+            f"Consent is {member.consent_status} for this parent: Khayal does not log, "
             "alert or remind until the parent agrees (or replies START after a pause)."
         )
     return member

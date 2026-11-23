@@ -27,7 +27,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id']
 
 const INTENDED_USE =
-  'Care Circle is a medication-adherence and self-recorded-readings logbook with family ' +
+  'Khayal is a medication-adherence and self-recorded-readings logbook with family ' +
   'notifications. It does not diagnose, treat or recommend dosing. Alert limits are set by the ' +
   "parent's doctor. Not an emergency service: call 108/112."
 
@@ -102,7 +102,7 @@ function Shell({ onSignOut }: { onSignOut: () => void }) {
         <div className="topbar-inner">
           <div className="brand">
             <span className="brand-mark" aria-hidden="true">
-              CC
+              K
             </span>
             <div>
               <strong>{parent.name}</strong>
@@ -138,7 +138,7 @@ function Shell({ onSignOut }: { onSignOut: () => void }) {
         {consent !== 'granted' && (
           <p className="banner">
             {consent === 'paused'
-              ? `${parent.name} has paused Care Circle. Nothing new is logged or shared until they reply START.`
+              ? `${parent.name} has paused Khayal. Nothing new is logged or shared until they reply START.`
               : consent === 'revoked'
                 ? `${parent.name} has withdrawn consent. Nothing is shared.`
                 : `${parent.name} has not agreed yet. Nothing is logged until they reply “Haan / Yes”.`}

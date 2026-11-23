@@ -39,7 +39,7 @@ def parent(store):
 
 
 def test_path_from_url():
-    assert path_from_url("sqlite:///./care_circle.db") == "./care_circle.db"
+    assert path_from_url("sqlite:///./khayal.db") == "./khayal.db"
     assert path_from_url("sqlite:///:memory:") == ":memory:"
     with pytest.raises(ValueError):
         path_from_url("postgres://x")

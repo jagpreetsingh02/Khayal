@@ -1,4 +1,4 @@
-# Care Circle — Project Brief (research + architecture + build plan)
+# Khayal — Project Brief (research + architecture + build plan)
 
 Source: team research done 22 Nov 2026 (6 research areas: problem evidence, competitors,
 core tech, sponsor tech, safety/regulation, business model). Figures marked **(est.)** are our
@@ -62,7 +62,7 @@ Chennai case as "no one was watching", not "a missed reading killed him".
 
 ## 3. Solution and research-driven design decisions
 
-One line: Care Circle turns a WhatsApp photo of any ordinary glucometer or BP monitor into a
+One line: Khayal turns a WhatsApp photo of any ordinary glucometer or BP monitor into a
 confirmed, logged reading and a family that knows — no new app, no new device.
 
 Features:
@@ -95,7 +95,7 @@ Design decisions forced by research (do not undo):
   Store data in ap-south-1 (Mumbai); keep numbers, delete photos after confirmation; audit log.
 - **Logbook, not a medical device.** CDSCO's 2026 software guidance excludes data-management
   software. Doctor-set thresholds; summaries describe, never interpret. Intended-use line:
-  "Care Circle is a medication-adherence and self-recorded-readings logbook with family
+  "Khayal is a medication-adherence and self-recorded-readings logbook with family
   notifications. It does not diagnose, treat or recommend dosing. Alert limits are set by the
   parent's doctor. Not an emergency service: call 108/112."
 - **Narrow bot.** Meta bans general-purpose AI chatbots on the WhatsApp Business API (from
@@ -120,7 +120,7 @@ Design decisions forced by research (do not undo):
        |            -> plausibility rules -> read-back "142/88 correct?"   |
        |   voice note -> ElevenLabs Scribe v3                              |
        v                                                                   |
-  Agent loop (Bedrock / AgentCore Runtime) ----MCP----> Care Circle MCP server (FastMCP on AWS)
+  Agent loop (Bedrock / AgentCore Runtime) ----MCP----> Khayal MCP server (FastMCP on AWS)
                                                          log_reading | get_history | create_reminder
   ElevenLabs Agent (voice calls) ---------MCP----------> alert_family | request_refill | weekly_summary
        ^                                                        |            |            |
@@ -195,7 +195,7 @@ and decides tool calls. Allowed tools only (allowlist). In mock mode: determinis
 In LLM mode: tool-calling model connected to the MCP server through an MCP client.
 Every tool call is written to `audit_log`.
 
-### 5.5 Care Circle MCP server (FastMCP)
+### 5.5 Khayal MCP server (FastMCP)
 
 | Tool | Does | Guardrail |
 |---|---|---|
@@ -303,7 +303,7 @@ Store `consent_status`, `consent_at`, `consent_text_version`.
 ## 8. Repo structure (target)
 
 ```
-care-circle/
+khayal/
   CLAUDE.md  PROGRESS.md  README.md  .env.example  .gitignore
   .claude/settings.json
   docs/PROJECT_BRIEF.md  docs/architecture.png (export of the diagram)
@@ -384,7 +384,7 @@ CHANNEL=simulator             # simulator | telegram | twilio
 LLM_PROVIDER=mock             # mock | groq | bedrock
 STORAGE=sqlite                # sqlite | dynamodb
 VOICE=none                    # none | elevenlabs
-DATABASE_URL=sqlite:///./care_circle.db
+DATABASE_URL=sqlite:///./khayal.db
 MCP_SERVER_URL=http://localhost:8001/mcp
 GROQ_API_KEY=
 GROQ_VISION_MODEL=            # check console.groq.com/docs/models (e.g. a Llama 4 Scout / Qwen vision model)
@@ -452,7 +452,7 @@ guardrails, "Run in 2 minutes" (mock mode, no keys), how to enable real provider
 - Honest USP = the combination: any ordinary meter read from a photo + read-back, reminders
   from a medicine-strip photo, tiered family alerts, family-approved refills off WhatsApp,
   Indian-language voice, one permissioned MCP tool layer shared by a chat agent and a voice agent.
-- Don't claim "only Care Circle" for refill approval until 1mg / PharmEasy / Apollo are checked.
+- Don't claim "only Khayal" for refill approval until 1mg / PharmEasy / Apollo are checked.
 
 ## 14. Open risks to verify
 

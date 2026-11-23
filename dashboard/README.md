@@ -1,4 +1,4 @@
-# Care Circle — family dashboard
+# Khayal — family dashboard
 
 React + Vite + TypeScript + Recharts. Mobile first (children mostly use phones). Talks to the
 dashboard API in `backend/app/api/dashboard.py`; polls every 4 s so alerts and approvals show

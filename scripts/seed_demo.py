@@ -1,6 +1,6 @@
 """Seed a demo family: one parent, two children, medicines and 14 days of readings.
 
-Run from backend/ with the servers stopped (uses DATABASE_URL, default ./care_circle.db,
+Run from backend/ with the servers stopped (uses DATABASE_URL, default ./khayal.db,
 and wipes it first):
     cd backend && uv run python ../scripts/seed_demo.py
 or let the start script do it: uv run python ../scripts/start.py --seed

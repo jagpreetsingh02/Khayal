@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Care Circle Simulator</title>
+<title>Khayal Simulator</title>
 <style>
   :root {
     --bg: #eef1ef; --panel: #ffffff; --ink: #1d2521; --muted: #64706a; --line: #d9dfdb;
@@ -125,7 +125,7 @@
 </head>
 <body>
 <header>
-  <h1>Care Circle · simulator</h1>
+  <h1>Khayal · simulator</h1>
   <span class="badge" id="mode">mode …</span>
   <span class="badge" id="reader">reader …</span>
   <span class="badge" id="mcp"><span class="dot"></span>MCP …</span>
@@ -145,7 +145,7 @@
 
 <main>
   <section class="phone parent">
-    <div class="top"><b id="parent-name">Parent</b><small id="parent-sub">WhatsApp · Care Circle</small></div>
+    <div class="top"><b id="parent-name">Parent</b><small id="parent-sub">WhatsApp · Khayal</small></div>
     <div class="chat" id="parent-chat"><div class="empty">Say hello to start.</div></div>
     <div class="typing" id="typing"></div>
     <div class="hint" id="hint"></div>
@@ -228,7 +228,7 @@ function renderFeed(box, key, feed, emptyText) {
     if (item.direction === "note") { box.append(el("div", "note", item.text)); continue; }
     if (item.kind === "voice_call") {
       const card = el("div", "callcard");
-      card.append(el("div", "ring", "Incoming call · Care Circle"), el("div", "script", item.text),
+      card.append(el("div", "ring", "Incoming call · Khayal"), el("div", "script", item.text),
                   voiceRow(item), el("time", null, hhmm(item.at) + (item.audio_url ? "" : " · simulated call")));
       box.append(card);
       continue;
@@ -354,7 +354,7 @@ async function checkMcp() {
       document.createTextNode(s.ok ? "MCP server · " + s.tools.length + " tools" : "MCP server unreachable"));
     banner.classList.toggle("show", !s.ok);
     if (!s.ok) {
-      banner.replaceChildren(document.createTextNode("The agent cannot reach the Care Circle MCP server, so alerts and reminders will fail. Start both with "),
+      banner.replaceChildren(document.createTextNode("The agent cannot reach the Khayal MCP server, so alerts and reminders will fail. Start both with "),
         el("code", null, "cd backend && uv run python ../scripts/start.py"), document.createTextNode(" — " + s.error));
     }
   } catch (e) { badge.replaceChildren(el("span", "dot bad"), document.createTextNode("MCP ?")); }
@@ -373,7 +373,7 @@ async function post(path, body) {
 
 function setBusy(on, label) {
   busy = on;
-  $("typing").textContent = on ? (label || "Care Circle is typing…") : "";
+  $("typing").textContent = on ? (label || "Khayal is typing…") : "";
   for (const b of document.querySelectorAll("#compose button, .quick button, #samples button, #vsamples button")) {
     if (b.id !== "rec" || !recorder) b.disabled = on;
   }
