@@ -270,7 +270,9 @@ def test_provider_selection_needs_keys():
 
 
 def test_elevenlabs_stt_request_shape():
-    fake = FakeEleven(httpx.Response(200, json={"text": "मैंने दवा ले ली", "language_code": "hi"}))
+    # Shape of a real scribe_v3 reply (live check 23 Nov 2026): 3-letter language codes.
+    reply = {"text": "मैंने दवा ले ली", "language_code": "hin", "language_probability": 0.99}
+    fake = FakeEleven(httpx.Response(200, json=reply))
     stt = ElevenLabsSTT(FAKE_KEY, model="scribe_v3", client=fake.client())
     text = stt.transcribe(AudioInput(data=b"\x1aE\xdf\xa3webm", mime="audio/webm"))
     assert text == "मैंने दवा ले ली"
@@ -278,6 +280,7 @@ def test_elevenlabs_stt_request_shape():
     assert req.url.path == "/v1/speech-to-text" and req.headers["xi-api-key"] == FAKE_KEY
     body = req.content.decode("latin-1")
     assert 'name="model_id"' in body and "scribe_v3" in body and 'name="file"' in body
+    assert 'name="language_code"' not in body  # auto-detect, so Hinglish works
 
 
 def test_elevenlabs_stt_errors_and_limits():

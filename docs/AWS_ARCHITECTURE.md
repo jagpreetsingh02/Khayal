@@ -55,7 +55,7 @@ implementation does not. **Design** = not started.
 | Dashboard API | FastAPI routes (`app/api/dashboard.py`); refill approval exists only here | **API Gateway** + **Lambda**; approval stays the only path to an approved refill | Design (code reused) |
 | Family sign-in | Demo token + HMAC-signed session (`app/api/auth.py`) | **Amazon Cognito** user pool; each family member a user, mapped to their `family_id` server-side | Design |
 | Family dashboard (web) | React + Vite build served by FastAPI at `/dashboard/` | **AWS Amplify Hosting** (static build) | Design |
-| Voice notes (TTS / STT) | ElevenLabs adapters (`app/voice/*`, mocked in tests, not yet called live); mock voice in the browser | Unchanged: ElevenLabs over HTTPS from Lambda; keys in **AWS Secrets Manager** | Built (provider), design (AWS hosting) |
+| Voice notes (TTS / STT) | ElevenLabs adapters (`app/voice/*`, mocked in tests; TTS + STT checked live once, 23 Nov 2026); mock voice in the browser | Unchanged: ElevenLabs over HTTPS from Lambda; keys in **AWS Secrets Manager** | Built (provider), design (AWS hosting) |
 | Red-alert phone call | Mock call card; Twilio call adapter (not tested live) | Unchanged: Twilio (or an ElevenLabs agent over Twilio) from Lambda | Built (adapter), design (AWS hosting) |
 | Logs, metrics, audit | `audit_log` table shown on the dashboard; process logs to stdout | `audit_log` in DynamoDB; **CloudWatch** logs, metrics and alarms (failed alerts, tool refusals), plus an AWS Budgets alarm | Design |
 | Secrets | `.env` (git-ignored) | **AWS Secrets Manager** / SSM Parameter Store, read by Lambda roles with least privilege | Design |

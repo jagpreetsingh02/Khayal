@@ -234,6 +234,7 @@ uv run python ../scripts/mcp_client_demo.py        # list MCP tools, call log_re
 uv run python ../scripts/chat_demo.py --demo       # the conversation in the terminal
 uv run python ../scripts/accuracy_test.py          # reader accuracy on samples/ (mock)
 uv run python ../scripts/accuracy_test.py --reader groq   # real photos: warns, estimates tokens, asks
+uv run python ../scripts/accuracy_test.py --reader groq --samples ../samples/generated_medical_test_images_jpg --kind meter --pace 21
 
 # from dashboard/ (hot reload on http://localhost:5173/dashboard/, /api proxied to :8000)
 npm run dev
@@ -276,6 +277,9 @@ English; Tamil for reminders and replies, as a stretch); the full chat text stay
   2026; `eleven_flash_v2_5` is cheaper per character). Audio is cached by text, so repeated
   reminders cost nothing, and `ELEVENLABS_DAILY_CHAR_BUDGET` (default 1500 characters/day)
   protects the free plan. No key, over budget or an API error: the message goes as text only.
+  Live check 23 Nov 2026 on the free plan: premade voice **Sarah** with `language_code` `hi`
+  and `en`; Scribe transcribed the Hindi clip back word for word. Free plans cannot use
+  Shared Voice Library voices (such as native Hindi voices) through the API, only premade ones.
 - `VOICE=none`: text only.
 
 **Voice notes in (STT).** 🎤 in the simulator records in the browser; 🗣️ sends sample voice
@@ -310,15 +314,39 @@ there needs a public audio URL; see the roadmap).
 - **Bedrock / DynamoDB:** `LLM_PROVIDER=bedrock` and `STORAGE=dynamodb` are switches only today
   (a stub reader and a "not implemented" error). See [docs/AWS_ARCHITECTURE.md](docs/AWS_ARCHITECTURE.md).
 
+## Reading accuracy
+
+Measured 23 Nov 2026 with `scripts/accuracy_test.py` and the Groq reader (`qwen/qwen3.8-27b`),
+exact match on every field (systolic, diastolic, pulse, or glucose value and unit):
+
+| Set | Scored | All fields right |
+|---|---|---|
+| BP monitors | 13 | **11 / 13 (85%)** |
+| Glucometers | 3 | 3 / 3 (too few to mean much) |
+| Total | 16 | 14 / 16 (88%) |
+
+- **These are AI-generated synthetic test images, not real photos.** We generated them to look
+  like phone photos taken at home (clutter, glare, blur, angles) and labelled each by eye
+  ([samples/generated_medical_test_images_jpg/](samples/generated_medical_test_images_jpg/)).
+  They are not photos of Indian home devices. **Testing on real photos of Indian home devices
+  is planned**, and only that will give a real accuracy number.
+- 6 more glucometer images were not scored: Groq's free daily token limit ran out mid-run.
+- Both misses were wrong reads, none were refusals: pulse 108 read as 100 on a soft display
+  (a person could misread it too), and a photo showing a BP monitor *and* a glucometer was read
+  as the glucometer. In the app, the parent sees "I read …, correct?" and would reply "2".
+  0 images were rejected as unreadable (none of them should have been).
+- We could not use public real-photo datasets: the Oxford seven-segment set is no longer
+  downloadable, and Roboflow sets need an account key and only label single digits (details in
+  the samples folder README).
+
 ## Safety and privacy
 
 - **A logbook, not a medical device.** Summaries and alerts describe numbers against limits the
   doctor set; they never interpret, diagnose or suggest doses (CDSCO's 2026 software guidance
   excludes data-management software). Red alerts always say "If you feel unwell, call 108/112".
-- **Reading accuracy is unproven, so every reading is read back.** Strict JSON schema,
-  rule-based plausibility checks and mandatory parent confirmation. **No accuracy number is
-  published yet:** the photos in `samples/` are synthetic and only test the pipeline, and we will
-  report a number only after measuring `scripts/accuracy_test.py` on labelled real photos.
+- **Reading accuracy is not proven on real photos, so every reading is read back.** Strict JSON
+  schema, rule-based plausibility checks and mandatory parent confirmation. See
+  [Reading accuracy](#reading-accuracy) for the one measurement we have, on AI-generated images.
 - **Parent consents, not the child.** The parent agrees in chat, can reply STOP at any time, and
   chooses what the family sees (readings, alerts, medicines). Children cannot change it. One
   exception for safety: red alerts always reach the family, even if alerts are not shared.
@@ -345,14 +373,18 @@ there needs a public audio URL; see the roadmap).
 - [x] Phase 5: reminder scheduler, low-stock requests, weekly summary, voice notes, red-alert call
 - [x] Phase 6: 3-minute quick start checked on a fresh clone, demo script, AWS production design
   ([docs/AWS_ARCHITECTURE.md](docs/AWS_ARCHITECTURE.md)), MIT licence
-- [ ] Measured reading accuracy on labelled real photos (`scripts/accuracy_test.py`)
+- [x] First accuracy run on 16 AI-generated test images (see [Reading accuracy](#reading-accuracy))
+- [ ] Measured reading accuracy on labelled real photos of Indian home devices
 - [ ] AWS deployment in Mumbai (ap-south-1): Bedrock reader and agent, DynamoDB store,
   EventBridge Scheduler, Cognito, Amplify, End User Messaging Social for WhatsApp
 - [ ] LLM tool-calling agent behind the same MCP allowlist; voice notes on Telegram/WhatsApp
 
 ## Team
 
-**Team SHERRR**: Jagpreet Singh ([github.com/jagpreetsingh02](https://github.com/jagpreetsingh02)).
+**Team SHERRR**:
+
+- Jagpreet Singh ([github.com/jagpreetsingh02](https://github.com/jagpreetsingh02))
+- Swetank Kumar
 
 ## License
 

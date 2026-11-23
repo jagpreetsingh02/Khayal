@@ -1,9 +1,12 @@
 """Speech-to-text for parent voice notes (brief §5.2): ElevenLabs Scribe.
 
 POST /v1/speech-to-text, multipart `file` + `model_id` (scribe_v3, checked 23 Nov 2026;
-scribe_v1 is deprecated); the transcript is in `text`. The language is auto-detected, so
-Hinglish works. The transcript is only text: a spoken reading still gets the same read-back
-("I read 142/88 — correct?") before anything is saved.
+scribe_v1 is deprecated); the transcript is in `text`. No `language_code` is sent, so the
+language is auto-detected and Hinglish works. Live check 23 Nov 2026: the reply's
+`language_code` is ISO 639-3 ("hin", "eng"), unlike TTS, which takes ISO 639-1 ("hi"); a
+hint of "hi" or "hin" is accepted. We only use `text`, so the code format never matters here.
+The transcript is only text: a spoken reading still gets the same read-back ("I read 142/88 —
+correct?") before anything is saved.
 
 MockSTT knows only the simulator's sample voice notes (their transcript travels with them);
 a real recording in mock mode is "not understood", honestly.

@@ -4,19 +4,26 @@
     uv run python ../scripts/accuracy_test.py                       # mock reader
     uv run python ../scripts/accuracy_test.py --reader groq         # needs GROQ_API_KEY
     uv run python ../scripts/accuracy_test.py --reader groq --real-only --yes
+    uv run python ../scripts/accuracy_test.py --reader groq --samples DIR --kind meter --pace 21
+    uv run python ../scripts/accuracy_test.py --reader groq --samples DIR --match 'glucose_*'
 
 A real reader spends API quota: the script estimates the tokens first and asks to continue
 (`--yes` skips the question; without a terminal it stops unless `--yes` is given), then prints
 the tokens the API reported.
 
 "Overall" counts a photo as correct only when every checked field matches. A reader error
-counts as a miss on every field. Label format: samples/README.md.
+counts as a miss on every field. Misses are split into "said unreadable" (the reader returned
+legible=false, so the parent is asked for a new photo: the safe outcome), "read wrong" (a
+legible answer with a wrong value) and reader errors. `--pace` sleeps between photos to stay
+under the free tier's ~3 photos/minute. Label format: samples/README.md.
 """
 
 import argparse
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Callable
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -61,10 +68,18 @@ def same(field: str, expected: Any, got: Any) -> bool:
     return expected == got
 
 
-def evaluate(reader: Reader, labels: list[Label], samples_dir: Path) -> dict[str, Any]:
+def evaluate(
+    reader: Reader,
+    labels: list[Label],
+    samples_dir: Path,
+    pace: float = 0.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
     field_hits: dict[str, list[bool]] = defaultdict(list)
     results = []
-    for label in labels:
+    for i, label in enumerate(labels):
+        if pace and i:
+            sleep(pace)
         path = samples_dir / label.file
         data = path.read_bytes() if path.is_file() else b""
         image = ImageInput(data=data, filename=label.file)
@@ -84,7 +99,19 @@ def evaluate(reader: Reader, labels: list[Label], samples_dir: Path) -> dict[str
             field_hits[field].append(ok)
             if not ok:
                 misses.append((field, want, have))
-        results.append({"file": label.file, "misses": misses, "error": error, "seconds": seconds})
+        device = expected.device_type if label.kind == "meter" else "strip"
+        # legible=false where the label expects a readable photo: the reader refused to guess.
+        refused = got is not None and not got.legible and expected.legible
+        results.append(
+            {
+                "file": label.file,
+                "device": device,
+                "misses": misses,
+                "error": error,
+                "refused": refused,
+                "seconds": seconds,
+            }
+        )
     return {"fields": dict(field_hits), "results": results}
 
 
@@ -134,6 +161,18 @@ def report(reader_name: str, outcome: dict[str, Any], skipped: list[str]) -> Non
         print(f"  {field:<14} {pct(hits)}")
     overall = [not r["misses"] for r in results]
     print(f"\nOverall (all checked fields right): {pct(overall)}")
+    by_device: dict[str, list[bool]] = defaultdict(list)
+    for r in results:
+        by_device[r["device"]].append(not r["misses"])
+    for device, hits in by_device.items():
+        print(f"  {device:<14} {pct(hits)}")
+    missed = [r for r in results if r["misses"]]
+    refused = sum(1 for r in missed if r["refused"])
+    errors = sum(1 for r in missed if r["error"])
+    print(
+        f"Misses: {len(missed)} = {refused} said unreadable (asks for a new photo) + "
+        f"{len(missed) - refused - errors} read wrong + {errors} reader error(s)"
+    )
     if results:
         avg = sum(r["seconds"] for r in results) / len(results)
         print(f"Average time per photo: {avg:.2f} s")
@@ -145,7 +184,8 @@ def report(reader_name: str, outcome: dict[str, Any], skipped: list[str]) -> Non
                 print(f"  {r['file']}: reader error: {r['error']}")
                 continue
             detail = "; ".join(f"{f}: expected {w!r}, got {h!r}" for f, w, h in r["misses"])
-            print(f"  {r['file']}: {detail}")
+            tag = " [said unreadable]" if r["refused"] else ""
+            print(f"  {r['file']}{tag}: {detail}")
     else:
         print("\nNo failures.")
 
@@ -156,11 +196,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--samples", type=Path, default=SAMPLES_DIR)
     ap.add_argument("--real-only", action="store_true", help="skip synthetic_* samples")
     ap.add_argument("--yes", action="store_true", help="don't ask before spending real API quota")
+    ap.add_argument("--kind", choices=["meter", "strip"], help="only test this kind of photo")
+    ap.add_argument("--match", help="only files matching this glob, e.g. 'glucose_*'")
+    ap.add_argument("--pace", type=float, default=0.0, help="seconds to wait between photos")
     args = ap.parse_args(argv)
 
     labels = load_labels(args.samples)
     if args.real_only:
         labels = [lb for lb in labels if not lb.synthetic]
+    if args.kind:
+        labels = [lb for lb in labels if lb.kind == args.kind]
+    if args.match:
+        labels = [lb for lb in labels if fnmatch(lb.file.lower(), args.match.lower())]
     skipped: list[str] = []
     if args.reader != "mock":  # a real reader needs the actual photo
         skipped = [lb.file for lb in labels if not (args.samples / lb.file).is_file()]
@@ -171,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.reader != "mock" and not confirm_real_run(args.reader, len(labels), args.yes):
         return 2
     reader = make_reader(args.reader, args.samples)
-    report(args.reader, evaluate(reader, labels, args.samples), skipped)
+    report(args.reader, evaluate(reader, labels, args.samples, args.pace), skipped)
     print(token_line(reader, len(labels)))
     return 0
 

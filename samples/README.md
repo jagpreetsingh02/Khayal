@@ -9,6 +9,9 @@ not photographed. They let the mock mode and a quick live test work. They are mu
 easier to read than real photos, so they say nothing about real accuracy. Real photos are
 what count.
 
+`generated_medical_test_images_jpg/` holds 24 **AI-generated** phone-style images with their
+own `labels.json` (see its README). Harder than the drawings, but still not real photos.
+
 ## Adding your own photos
 
 1. **Take the photo** the way a parent would: phone in hand, screen filling most of the frame.

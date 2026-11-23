@@ -1,0 +1,270 @@
+{
+  "about": "Ground truth for AI-generated synthetic test images (made by the repo owner with an image model; NOT real photographs). Labels written by a person looking at each image. Format: samples/README.md.",
+  "samples": [
+    {
+      "file": "bp_generated_01.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "Omron HEM-7120 among medicine strips",
+      "expected": {
+        "device_type": "bp",
+        "systolic": 187,
+        "diastolic": 115,
+        "pulse": 98
+      }
+    },
+    {
+      "file": "bp_generated_02.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "pulse digits are soft; 108 is the best human read (could be taken for 100)",
+      "expected": {
+        "device_type": "bp",
+        "systolic": 174,
+        "diastolic": 102,
+        "pulse": 108
+      }
+    },
+    {
+      "file": "bp_generated_03.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "time 7:48 also on screen",
+      "expected": {
+        "device_type": "bp",
+        "systolic": 184,
+        "diastolic": 110,
+        "pulse": 92
+      }
+    },
+    {
+      "file": "bp_generated_04.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {
+        "device_type": "bp",
+        "systolic": 168,
+        "diastolic": 104,
+        "pulse": 92
+      }
+    },
+    {
+      "file": "bp_generated_05.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "time 8:56 PM also on screen",
+      "expected": {
+        "device_type": "bp",
+        "systolic": 190,
+        "diastolic": 122,
+        "pulse": 118
+      }
+    },
+    {
+      "file": "bp_generated_06.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {
+        "device_type": "bp",
+        "systolic": 198,
+        "diastolic": 127,
+        "pulse": 136
+      }
+    },
+    {
+      "file": "bp_generated_07.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "a glucometer showing 240 mg/dL is also in the frame; the BP monitor is the main subject",
+      "expected": {
+        "device_type": "bp",
+        "systolic": 156,
+        "diastolic": 98,
+        "pulse": 90
+      }
+    },
+    {
+      "file": "bp_generated_08.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {
+        "device_type": "bp",
+        "systolic": 110,
+        "diastolic": 70,
+        "pulse": 64
+      }
+    },
+    {
+      "file": "bp_generated_09.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "glare across the systolic digits",
+      "expected": {
+        "device_type": "bp",
+        "systolic": 154,
+        "diastolic": 96,
+        "pulse": 94
+      }
+    },
+    {
+      "file": "bp_generated_10.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {
+        "device_type": "bp",
+        "systolic": 142,
+        "diastolic": 91,
+        "pulse": 88
+      }
+    },
+    {
+      "file": "bp_generated_11.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {
+        "device_type": "bp",
+        "systolic": 128,
+        "diastolic": 82,
+        "pulse": 76
+      }
+    },
+    {
+      "file": "bp_generated_12.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {
+        "device_type": "bp",
+        "systolic": 136,
+        "diastolic": 86,
+        "pulse": 79
+      }
+    },
+    {
+      "file": "bp_generated_13.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "wrist monitor",
+      "expected": {
+        "device_type": "bp",
+        "systolic": 118,
+        "diastolic": 74,
+        "pulse": 69
+      }
+    },
+    {
+      "file": "glucose_generated_01.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "blurred, date/time on screen",
+      "expected": {
+        "device_type": "glucose",
+        "glucose_value": 386,
+        "glucose_unit": "mg/dL"
+      }
+    },
+    {
+      "file": "glucose_generated_02.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "date/time on screen",
+      "expected": {
+        "device_type": "glucose",
+        "glucose_value": 324,
+        "glucose_unit": "mg/dL"
+      }
+    },
+    {
+      "file": "glucose_generated_03.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "dim, time on screen",
+      "expected": {
+        "device_type": "glucose",
+        "glucose_value": 312,
+        "glucose_unit": "mg/dL"
+      }
+    },
+    {
+      "file": "glucose_generated_04.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {
+        "device_type": "glucose",
+        "glucose_value": 362,
+        "glucose_unit": "mg/dL"
+      }
+    },
+    {
+      "file": "glucose_generated_05.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "glare, date/time on screen",
+      "expected": {
+        "device_type": "glucose",
+        "glucose_value": 274,
+        "glucose_unit": "mg/dL"
+      }
+    },
+    {
+      "file": "glucose_generated_06.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "time on screen",
+      "expected": {
+        "device_type": "glucose",
+        "glucose_value": 126,
+        "glucose_unit": "mg/dL"
+      }
+    },
+    {
+      "file": "glucose_generated_07.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {
+        "device_type": "glucose",
+        "glucose_value": 168,
+        "glucose_unit": "mg/dL"
+      }
+    },
+    {
+      "file": "glucose_generated_08.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "note": "date/time on screen",
+      "expected": {
+        "device_type": "glucose",
+        "glucose_value": 104,
+        "glucose_unit": "mg/dL"
+      }
+    },
+    {
+      "file": "glucose_generated_09.jpg",
+      "kind": "meter",
+      "synthetic": true,
+      "expected": {
+        "device_type": "glucose",
+        "glucose_value": 92,
+        "glucose_unit": "mg/dL"
+      }
+    },
+    {
+      "file": "strip_generated_01.jpg",
+      "kind": "strip",
+      "synthetic": true,
+      "note": "Dolo 650 strip next to two unlabelled strips",
+      "expected": {
+        "brand": "Dolo",
+        "strength": "650"
+      }
+    },
+    {
+      "file": "strip_generated_02.jpg",
+      "kind": "strip",
+      "synthetic": true,
+      "note": "only the tablet side of each strip is visible: no brand can be read",
+      "expected": {
+        "legible": false
+      }
+    }
+  ]
+}
