@@ -54,7 +54,7 @@ def seed(store: Store, now: datetime | None = None, rng_seed: int = 7) -> dict[s
             name="Kamla Sharma",
             channel="simulator",
             channel_ref=PARENT_REF,
-            language="hi",
+            language="en",
             consent_status="granted",
             consent_at=consent_at,
         )

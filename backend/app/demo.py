@@ -27,7 +27,7 @@ def seed_fresh_family(store: Store) -> Member:
             name="Kamla Sharma",
             channel="simulator",
             channel_ref=PARENT_REF,
-            language="hi",
+            language="en",
         )
     )
     for name, ref in CHILDREN:
