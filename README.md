@@ -3,6 +3,60 @@
 **A WhatsApp photo of any ordinary glucometer or BP monitor becomes a confirmed, logged reading
 and a family that knows. No new app, no new device.**
 
+## Run it in 3 minutes
+
+**No API keys, no accounts, nothing paid.** Mock mode simulates WhatsApp, the AI reader and the
+voice notes locally, while the MCP server, the guardrails and the dashboard are the real ones.
+
+You need: **git**, **Python 3.11+**, **Node 20.19+ or 22.12+**, and **[uv](https://docs.astral.sh/uv/)**
+(`pip install uv`, or `brew install uv` on macOS).
+
+**macOS / Linux**
+
+```bash
+git clone https://github.com/jagpreetsingh02/care-circle.git
+cd care-circle
+cp .env.example .env                                  # mock mode, no keys
+(cd dashboard && npm ci && npm run build)              # builds the family dashboard once
+cd backend && uv sync                                  # Python deps into backend/.venv
+uv run python ../scripts/start.py --seed               # 14 days of demo data, then start
+```
+
+**Windows (PowerShell)**
+
+```powershell
+git clone https://github.com/jagpreetsingh02/care-circle.git
+cd care-circle
+Copy-Item .env.example .env
+cd dashboard; npm ci; npm run build; cd ..
+cd backend; uv sync
+uv run python ..\scripts\start.py --seed
+```
+
+(If PowerShell refuses to run `npm`, use Command Prompt with `copy` instead of `Copy-Item` and
+`&&` instead of `;`.)
+
+You should see `Care Circle is running (APP_MODE=mock, CHANNEL=simulator, LLM_PROVIDER=mock)`.
+Everything is on one port; **Ctrl+C** stops it.
+
+**Then click through it** (about 2 minutes):
+
+| Where | Click | What you should see |
+|---|---|---|
+| http://localhost:8000/simulator (the parent's chat, the children's phones, the live MCP log) | **🖼️** → **bp normal**, then the quick reply **1** | "I read 132/84, pulse 74 — correct?" → "Saved: 132/84, pulse 74." and a `log_reading` call in the MCP log |
+| Simulator | **🖼️** → **bp high** → **1** | Asked to rest 5 minutes and measure again; the family is **not** alerted yet |
+| Simulator | **⏩ Skip 5 minutes** → **🖼️** → **bp high** → **1** | **RED alert** in Ravi's and Priya's phones, plus an **Incoming call** card |
+| Simulator (demo clock) | **⏰ Next reminder**, then **⏩ 30 min** without replying (repeat once if needed) | A medicine reminder with a Hindi voice note (▶), one follow-up, then an **AMBER** "2 medicine reminders were marked missed" alert to the children |
+| http://localhost:8000/dashboard/ → token `change-me` → **Continue** → **Ravi Sharma** | **Medicines** → **Simulate low stock (demo)** on Telma 40 | The AI calls `request_refill` over MCP; the children get "Refill request…" |
+| Dashboard | **Overview** → **Approve** | Kamla's chat: "Refill approved for Telma 40 (30); your pharmacy will confirm." |
+| Dashboard | **What the AI did** | Every MCP tool call; **Approvals by the AI: 0**; `approve_refill: does not exist` |
+
+The full click-by-click video script is in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md). Checked
+on a fresh clone in an empty folder on macOS (23 Nov 2026); the Windows commands are the same
+steps but have not been run on Windows.
+
+---
+
 Built for wHACKiest 2026, Track 1, "Make MCP Matter: Less Magic, More Utility".
 The most controlled MCP product in the room: **the model can log, remind and *request*. It
 cannot approve, prescribe or diagnose, because the approve tool does not exist on its side.**
@@ -112,8 +166,13 @@ flowchart TB
   a real MCP client over streamable HTTP. The parent's identity travels in the request `_meta`
   set by our backend, never in tool arguments the model writes.
 - `dashboard/`: React + Vite + TypeScript + Recharts family dashboard.
-- Adapters picked in `.env`: channel (simulator / telegram / twilio), LLM (mock / groq /
-  bedrock), storage (sqlite / dynamodb), voice (none / elevenlabs).
+- Adapters picked in `.env`: channel (simulator / telegram / twilio), reader (mock / groq;
+  bedrock is a stub), storage (sqlite; dynamodb planned), voice (none / mock / elevenlabs),
+  calls (none / mock / twilio).
+- **On AWS (design only, nothing deployed):** Bedrock for reading and the agent, AgentCore or
+  Lambda for the MCP server, API Gateway, S3, DynamoDB, EventBridge Scheduler, Cognito, Amplify
+  and End User Messaging Social for WhatsApp, all in Mumbai (ap-south-1). What is built versus
+  designed, row by row: [docs/AWS_ARCHITECTURE.md](docs/AWS_ARCHITECTURE.md).
 
 ### MCP tools and their guardrails
 
@@ -131,58 +190,23 @@ flowchart TB
 All tools refuse a parent whose consent is pending, paused or revoked. Every call, including
 refusals, is written to `audit_log` and shown as "What the AI did" in the simulator and dashboard.
 
-## Run in 2 minutes
+## More of the demo
 
-Mock mode needs **no API keys**. Prerequisites: Python 3.11+,
-[uv](https://docs.astral.sh/uv/) (`pip install uv`), Node 20+.
+After the quick start above (full script with timings: [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)):
 
-```bash
-git clone https://github.com/jagpreetsingh02/care-circle.git
-cd care-circle
-cp .env.example .env                         # APP_MODE=mock, no keys needed
+- **Medicine strip:** 🖼️ → `strip telma40` → "Telma 40 = Telmisartan 40 mg. Remind at 8 PM?" →
+  **1** → reminder set.
+- **Parent-first sharing:** on the dashboard, **Sign out** → sign in as **Kamla** (the parent) →
+  **Limits & sharing** → turn off *Medicines*. Signed in as Ravi again, medicines and refills
+  say "not shared". (Turning off *Alerts* hides amber alerts; red alerts still reach the family.)
+- **Voice:** 🗣️ → “मैंने दवा ले ली” after a reminder marks the dose taken and answers with a
+  voice note. **📊 Weekly summary** sends the 7-day summary to the children.
+- **Narrow bot:** type `what's the weather?` → "I can only help with readings and medicines."
+- **Onboarding:** **Reset demo** starts a fresh family with consent *pending*: `hello` →
+  consent notice → **1**.
+- Approving a refill twice is safe; the first click wins.
 
-(cd dashboard && npm install && npm run build)   # once: builds the dashboard
-
-cd backend
-uv sync
-uv run python ../scripts/start.py --seed     # 14 days of demo data, MCP server + API
-```
-
-Then open, on one port:
-
-- **Simulator:** http://localhost:8000/simulator (the parent's chat, the children's phones, the MCP log)
-- **Dashboard:** http://localhost:8000/dashboard/ (token `change-me`, i.e. `DASHBOARD_DEMO_TOKEN`; sign in as Ravi or Priya)
-
-### Demo script (golden path, all mock)
-
-1. **Simulator:** 🖼️ → `bp high` → "I read 186/122. Correct?" → **1**. The parent is asked to rest
-   5 minutes; the family is *not* alerted on a first severe reading.
-2. **⏩ Skip 5 minutes** → 🖼️ `bp high` again → **1** → **RED alert** in both children's phones.
-   On the dashboard, the alert appears within seconds and **Trends** shows the spike above the
-   doctor's band. Tap **I've seen this**.
-3. 🖼️ `strip telma40` → "Telma 40 = Telmisartan 40 mg. Remind at 8 PM?" → **1** → reminder set.
-4. **Dashboard → Medicines → Simulate low stock (demo)** on Telma 40. The AI calls
-   `request_refill` over MCP; the children get "Refill request…" in the simulator.
-5. **Overview → Approve.** The refill goes to the demo partner pharmacy (no real order). The
-   parent's chat shows "Refill approved for Telma 40 (30); your pharmacy will confirm."
-   Approving twice is safe; the first click wins.
-6. **What the AI did:** every MCP tool call, plus the family's approval. Approvals by the AI: **0**.
-7. Sign out, sign in as **Kamla** (the parent) → **Limits & sharing** → turn off *Medicines*.
-   Signed in as Ravi again, medicines and refills now say "not shared". Parent-first. (Turning
-   off *Alerts* hides amber alerts; red alerts still reach the family.)
-
-8. **Reminders and voice (demo clock):** press **⏰ Next reminder**. The clock jumps to the next
-   medicine time and Kamla gets "8:00 AM: time for Telma 40…" with a Hindi voice note (▶ plays
-   it with your browser's voice in mock mode). Press 🗣️ → “मैंने दवा ले ली” → marked taken,
-   answered with a voice note. Or press **⏩ 30 min** without answering: one gentle follow-up;
-   two missed doses in a day send the family one AMBER alert. **📊 Weekly summary** sends the
-   7-day summary to the children. In step 2 the children also get an **Incoming call** card.
-
-Type `what's the weather?` in the parent chat: "I can only help with readings and medicines."
-**Reset demo** in the simulator starts a fresh family with consent *pending* (the onboarding
-path: `hello` → consent notice → **1**).
-
-### Screenshots
+## Screenshots
 
 ![Simulator: Hindi voice-note reminder and replies in the parent's chat, and an Incoming call card for the red alert in each child's pane](docs/screenshots/voice-and-call.png)
 
@@ -197,7 +221,7 @@ path: `hello` → consent notice → **1**).
 Regenerate them with `uv run --with playwright python ../scripts/screenshots.py` while the demo is
 running (dev-only; uses your installed Chrome).
 
-### Developing
+## Developing
 
 ```bash
 # from backend/
@@ -267,7 +291,7 @@ or very low glucose) rings the family; amber and missed doses never do. `CALL_PR
 playing the TTS audio (needs `PUBLIC_BASE_URL`) or reading the script; set `TWILIO_CALL_FROM`.
 
 Voice notes go to the simulator; Telegram and WhatsApp still receive the text only (sending audio
-there needs a public audio URL: Phase 6).
+there needs a public audio URL; see the roadmap).
 
 ## Enabling real providers
 
@@ -283,6 +307,8 @@ there needs a public audio URL: Phase 6).
 - **Voice (ElevenLabs):** `VOICE=elevenlabs`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`
   (see Voice and reminders). Red-alert phone calls: `CALL_PROVIDER=twilio` + `TWILIO_CALL_FROM`.
 - **Dashboard:** set your own `DASHBOARD_DEMO_TOKEN` before showing it to anyone.
+- **Bedrock / DynamoDB:** `LLM_PROVIDER=bedrock` and `STORAGE=dynamodb` are switches only today
+  (a stub reader and a "not implemented" error). See [docs/AWS_ARCHITECTURE.md](docs/AWS_ARCHITECTURE.md).
 
 ## Safety and privacy
 
@@ -290,8 +316,9 @@ there needs a public audio URL: Phase 6).
   doctor set; they never interpret, diagnose or suggest doses (CDSCO's 2026 software guidance
   excludes data-management software). Red alerts always say "If you feel unwell, call 108/112".
 - **Reading accuracy is unproven, so every reading is read back.** Strict JSON schema,
-  rule-based plausibility checks and mandatory parent confirmation. We will report an accuracy
-  number only after measuring it on real photos.
+  rule-based plausibility checks and mandatory parent confirmation. **No accuracy number is
+  published yet:** the photos in `samples/` are synthetic and only test the pipeline, and we will
+  report a number only after measuring `scripts/accuracy_test.py` on labelled real photos.
 - **Parent consents, not the child.** The parent agrees in chat, can reply STOP at any time, and
   chooses what the family sees (readings, alerts, medicines). Children cannot change it. One
   exception for safety: red alerts always reach the family, even if alerts are not shared.
@@ -316,8 +343,17 @@ there needs a public audio URL: Phase 6).
 - [x] Phase 3: channels and agent, golden path in the web simulator
 - [x] Phase 4: family dashboard and refill approval
 - [x] Phase 5: reminder scheduler, low-stock requests, weekly summary, voice notes, red-alert call
-- [ ] Phase 6: AWS deployment (Mumbai region), polish and measured reading accuracy
+- [x] Phase 6: 3-minute quick start checked on a fresh clone, demo script, AWS production design
+  ([docs/AWS_ARCHITECTURE.md](docs/AWS_ARCHITECTURE.md)), MIT licence
+- [ ] Measured reading accuracy on labelled real photos (`scripts/accuracy_test.py`)
+- [ ] AWS deployment in Mumbai (ap-south-1): Bedrock reader and agent, DynamoDB store,
+  EventBridge Scheduler, Cognito, Amplify, End User Messaging Social for WhatsApp
+- [ ] LLM tool-calling agent behind the same MCP allowlist; voice notes on Telegram/WhatsApp
 
 ## Team
 
-_To be added._
+**Team SHERRR**: Jagpreet Singh ([github.com/jagpreetsingh02](https://github.com/jagpreetsingh02)).
+
+## License
+
+[MIT](LICENSE)
