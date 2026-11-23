@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         shot(phone, "refills", "dashboard-refills-phone.png", ".history li")
         shot(desk, "audit", "dashboard-audit.png", ".audit-item")
 
-        parent = page(PHONE, s["kamla"])
+        parent = page(PHONE, s["lakshmi"])
         shot(parent, "settings", "dashboard-sharing-phone.png", ".switch")
 
         sim = browser.new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=1.5)

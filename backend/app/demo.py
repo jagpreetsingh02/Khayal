@@ -9,7 +9,7 @@ from app.storage.base import Store
 from app.storage.models import Family, Member
 
 PARENT_REF = "+919800000001"
-CHILDREN = (("Ravi Sharma", "+919800000002"), ("Priya Sharma", "+919800000003"))
+CHILDREN = (("Ravi Gowda", "+919800000002"), ("Priya Gowda", "+919800000003"))
 DOCTOR_LIMITS = (
     ("bp_limit_systolic", 140),
     ("bp_limit_diastolic", 90),
@@ -18,13 +18,13 @@ DOCTOR_LIMITS = (
 
 
 def seed_fresh_family(store: Store) -> Member:
-    """Sharma family on the simulator channel; returns the parent (consent pending)."""
-    family = store.add_family(Family(name="Sharma family"))
+    """Gowda family on the simulator channel; returns the parent (consent pending)."""
+    family = store.add_family(Family(name="Gowda family"))
     parent = store.add_member(
         Member(
             family_id=family.id,
             role="parent",
-            name="Kamla Sharma",
+            name="Lakshmi Gowda",
             channel="simulator",
             channel_ref=PARENT_REF,
             language="en",

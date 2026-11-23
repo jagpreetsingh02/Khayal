@@ -16,7 +16,7 @@ spec.loader.exec_module(add_member)
 
 def test_adds_telegram_parent_and_whatsapp_child_to_the_demo_family():
     store = SQLiteStore(":memory:")
-    p = add_member.add_member(store, "telegram", "123456", "parent", "Kamla TG")
+    p = add_member.add_member(store, "telegram", "123456", "parent", "Lakshmi TG")
     c = add_member.add_member(store, "twilio", "whatsapp:+919812345678", "child", "Ravi WA")
     demo = store.find_member_by_channel("simulator", PARENT_REF)
     assert p.family_id == c.family_id == demo.family_id

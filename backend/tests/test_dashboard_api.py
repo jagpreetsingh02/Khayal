@@ -101,11 +101,11 @@ def test_login_checks_the_demo_token(dash):
         m["name"]
         for m in dash.c.post("/api/login/members", json={"token": TOKEN}).json()["members"]
     ]
-    assert names == ["Priya Sharma", "Ravi Sharma", "Kamla Sharma"]  # children first
+    assert names == ["Priya Gowda", "Ravi Gowda", "Lakshmi Gowda"]  # children first
     bad = dash.c.post("/api/login", json={"token": "wrong", "member_id": dash.ravi.id})
     assert bad.status_code == 401
     me = dash.c.get("/api/me", headers=dash.login(dash.ravi)).json()
-    assert me["member"]["name"] == "Ravi Sharma" and me["parents"][0]["id"] == dash.parent.id
+    assert me["member"]["name"] == "Ravi Gowda" and me["parents"][0]["id"] == dash.parent.id
 
 
 def test_changing_the_demo_token_ends_sessions(dash, monkeypatch):
@@ -135,10 +135,10 @@ def test_acknowledge_alert_is_recorded_once(dash):
     h = dash.login(dash.ravi)
     [alert] = [a for a in dash.c.get("/api/alerts", headers=h).json()["alerts"]][:1]
     first = dash.c.post(f"/api/alerts/{alert['id']}/acknowledge", headers=h).json()
-    assert first["changed"] and first["alert"]["acknowledged_by"] == "Ravi Sharma"
+    assert first["changed"] and first["alert"]["acknowledged_by"] == "Ravi Gowda"
     again = dash.c.post(f"/api/alerts/{alert['id']}/acknowledge", headers=dash.login(dash.priya))
     assert again.json()["changed"] is False
-    assert again.json()["alert"]["acknowledged_by"] == "Ravi Sharma"
+    assert again.json()["alert"]["acknowledged_by"] == "Ravi Gowda"
     assert dash.store.list_audit(tool="dashboard:acknowledge_alert")[0].actor == "member"
 
 
@@ -154,7 +154,7 @@ def test_approve_records_member_sends_to_demo_pharmacy_and_tells_parent(dash):
     out = dash.c.post(f"/api/refills/{refill.id}/approve", headers=h).json()
     assert out["changed"] is True
     assert out["refill"]["status"] == "sent_to_pharmacy"
-    assert out["refill"]["decided_by"] == "Ravi Sharma" and out["refill"]["decided_at"]
+    assert out["refill"]["decided_by"] == "Ravi Gowda" and out["refill"]["decided_at"]
     assert "demo, no real order" in out["refill"]["pharmacy"]
     stored = dash.store.get_refill(refill.id)
     assert stored.decided_by_member_id == dash.ravi.id and stored.pharmacy_ref.startswith("DEMO-")
@@ -163,7 +163,7 @@ def test_approve_records_member_sends_to_demo_pharmacy_and_tells_parent(dash):
     assert any(
         "Refill approved" in t and "pharmacy will confirm" in t for t in dash.feed(dash.parent)
     )
-    assert any("Ravi Sharma approved" in t for t in dash.feed(dash.priya))
+    assert any("Ravi Gowda approved" in t for t in dash.feed(dash.priya))
     actors = {(e.tool, e.actor) for e in dash.store.list_audit()}
     assert ("dashboard:approve_refill", "member") in actors
     assert ("pharmacy:demo_order", "system") in actors
@@ -175,7 +175,7 @@ def test_double_approval_is_safe(dash):
     second = dash.c.post(f"/api/refills/{refill.id}/approve", headers=dash.login(dash.priya))
     assert first.json()["changed"] is True
     assert second.status_code == 200 and second.json()["changed"] is False
-    assert second.json()["refill"]["decided_by"] == "Ravi Sharma"  # first click wins
+    assert second.json()["refill"]["decided_by"] == "Ravi Gowda"  # first click wins
     assert len(dash.store.list_audit(tool="dashboard:approve_refill")) == 1
     parent_msgs = [t for t in dash.feed(dash.parent) if "Refill approved" in t]
     assert len(parent_msgs) == 1  # the parent is told once
@@ -214,11 +214,11 @@ def test_only_the_parent_changes_sharing(dash):
     url = f"/api/parents/{dash.parent.id}/sharing"
     body = {"readings": True, "alerts": True, "medicines": False}
     child = dash.c.put(url, json=body, headers=dash.login(dash.ravi))
-    assert child.status_code == 403 and "Only Kamla" in child.json()["detail"]
+    assert child.status_code == 403 and "Only Lakshmi" in child.json()["detail"]
     parent = dash.c.put(url, json=body, headers=dash.login(dash.parent))
     assert parent.status_code == 200
     assert parent.json()["categories"]["medicines"] is False
-    assert parent.json()["updated_by"] == "Kamla Sharma"
+    assert parent.json()["updated_by"] == "Lakshmi Gowda"
 
 
 def test_child_sees_only_shared_categories(dash):
@@ -342,7 +342,7 @@ def test_thresholds_are_labelled_and_updated_as_doctor_set(dash):
     row = next(t for t in put.json()["thresholds"] if t["rule"] == "bp_limit_systolic")
     assert (row["value"], row["set_by"]) == (135, "doctor")
     [entry] = dash.store.list_audit(tool="dashboard:update_thresholds")
-    assert entry.actor == "member" and "Ravi Sharma" in entry.args_json
+    assert entry.actor == "member" and "Ravi Gowda" in entry.args_json
 
 
 @pytest.mark.parametrize(

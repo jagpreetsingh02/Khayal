@@ -44,12 +44,12 @@ class World:
     def __init__(self, reader: Reader | None = None, consent: str = "granted", agent=None):
         self.store = SQLiteStore(":memory:")
         self.clock = Clock()
-        fam = self.store.add_family(Family(name="Sharma"))
+        fam = self.store.add_family(Family(name="Gowda"))
         self.parent = self.store.add_member(
             Member(
                 family_id=fam.id,
                 role="parent",
-                name="Kamla",
+                name="Lakshmi",
                 channel="simulator",
                 channel_ref=PARENT,
                 consent_status=consent,
@@ -146,9 +146,9 @@ def test_no_consent_only_the_notice_is_sent_and_photos_are_not_read():
     spy = SpyReader(meter=MeterReading(device_type="bp", systolic=140, diastolic=90, legible=True))
     w = World(reader=spy, consent="pending")
     reply = w.say(photo="synthetic_bp_normal.jpg")
-    assert reply == tpl.CONSENT_NOTICE.format(name="Kamla")
+    assert reply == tpl.CONSENT_NOTICE.format(name="Lakshmi")
     assert spy.calls == 0 and w.readings() == []
-    assert w.say("what is my bp?") == tpl.CONSENT_NOTICE.format(name="Kamla")
+    assert w.say("what is my bp?") == tpl.CONSENT_NOTICE.format(name="Lakshmi")
 
 
 def test_consent_yes_records_status_time_and_version():
@@ -179,7 +179,7 @@ def test_stop_discards_an_unconfirmed_reading(w):
 
 def test_revoked_parent_sees_consent_notice_again():
     w = World(consent="revoked")
-    assert w.say("142/88") == tpl.CONSENT_NOTICE.format(name="Kamla")
+    assert w.say("142/88") == tpl.CONSENT_NOTICE.format(name="Lakshmi")
     assert w.readings() == []
 
 
@@ -352,7 +352,7 @@ def test_repeat_bp_flow_ends_in_red_alert(w):
     assert reply.startswith(tpl.RED_REPEAT.format(value="186/122, pulse 92"))
     assert "I have told your family." in reply and tpl.EMERGENCY in reply
     family = w.to_family(out)
-    assert len(family) == 2 and all(t.startswith("RED alert for Kamla") for t in family)
+    assert len(family) == 2 and all(t.startswith("RED alert for Lakshmi") for t in family)
     assert all("108/112" in t for t in family)
     assert [a.level for a in w.store.list_alerts(w.parent.id)] == ["red"]
     assert w.state.state == IDLE
@@ -386,7 +386,7 @@ def test_no_repeat_in_15_minutes_sends_amber_to_family(w):
     family = w.to_family(out)
     assert len(family) == 2
     for text in family:
-        assert text.startswith("AMBER alert for Kamla: BP 186/122 at ")
+        assert text.startswith("AMBER alert for Lakshmi: BP 186/122 at ")
         assert "No repeat reading was taken within 15 minutes." in text
         assert "rest" not in text.lower() and "please" not in text.lower()  # no parent wording
     assert [(a.level, a.reason) for a in w.store.list_alerts(w.parent.id)][0][0] == "amber"
@@ -396,7 +396,7 @@ def test_no_repeat_in_15_minutes_sends_amber_to_family(w):
     w.clock.advance(4)  # 20 minutes after the first: still severe -> red
     w.say(photo="synthetic_bp_high.jpg")
     out = w.send("1")
-    assert all(t.startswith("RED alert for Kamla") for t in w.to_family(out))
+    assert all(t.startswith("RED alert for Lakshmi") for t in w.to_family(out))
     assert sorted(a.level for a in w.store.list_alerts(w.parent.id)) == ["amber", "red"]
 
 

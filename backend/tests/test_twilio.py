@@ -151,12 +151,12 @@ def test_rate_limit_one_message_per_3_seconds():
 
 def test_outside_24h_window_uses_the_sandbox_template_or_is_not_sent():
     fake = FakeTwilio()
-    alert = Outgoing(channel="twilio", to_ref=CHILD, member_id="c", text="RED alert for Kamla: x")
+    alert = Outgoing(channel="twilio", to_ref=CHILD, member_id="c", text="RED alert for Lakshmi: x")
     assert channel(fake).deliver(alert) is None and fake.messages == []
     channel(fake, template_sid="HXabc").deliver(alert)
     [sent] = fake.messages
     assert "Body" not in sent and sent["ContentSid"] == "HXabc"
-    assert json.loads(sent["ContentVariables"])["1"] == "RED alert for Kamla"
+    assert json.loads(sent["ContentVariables"])["1"] == "RED alert for Lakshmi"
     assert template_variables("Saved")["1"] == "Khayal update"
 
 
@@ -193,7 +193,7 @@ def test_webhook_rejects_bad_signature_and_handles_good_one(monkeypatch):
         bodies = [m["Body"] for m in fake.messages]
         assert bodies[0].startswith("I read sugar 45 mg/dL")
         assert "I have told your family." in bodies[1]
-        assert svc.simulator.feed(child.channel_ref)[-1].text.startswith("RED alert for Kamla")
+        assert svc.simulator.feed(child.channel_ref)[-1].text.startswith("RED alert for Lakshmi")
     finally:
         get_settings.cache_clear()
 

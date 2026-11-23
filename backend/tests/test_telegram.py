@@ -123,7 +123,7 @@ def test_polling_runs_the_conversation_and_alerts_family_on_simulator():
     assert tg.offset == 12
     assert "I have told your family." in bot.sent[-1]["text"]
     [alert] = [i.text for i in svc.simulator.feed(child.channel_ref)]
-    assert alert.startswith("RED alert for Kamla")
+    assert alert.startswith("RED alert for Lakshmi")
 
 
 def test_unknown_telegram_user_is_told_to_register():
