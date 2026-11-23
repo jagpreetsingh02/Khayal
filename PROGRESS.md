@@ -7,7 +7,7 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 ## Current status
 - Current phase: **Phase 6 — polish + AWS design: DONE** (branch `phase-6-polish-aws`, merged to
   `main`, tag `phase-6-done`). No AWS resource created; nothing deployed.
-- Current branch: `main` (chore `chore/rename-khayal` merged, tag `rename-khayal-done`)
+- Current branch: `main` (chore `chore/voice-indian-english` merged, tag `voice-indian-english-done`)
 - Next step: **submission support only** (deadline 24 Nov). Optional small chunks, each on its own
   branch: (a) score the 6 unscored glucose images once Groq's daily quota resets (~13k tokens,
   command in `samples/generated_medical_test_images_jpg/README.md`) and update README numbers;
@@ -21,6 +21,9 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 - [x] Phase 5 — voice + reminders · [x] Phase 6 — quick start, demo script, AWS design, hygiene
 
 ## Blockers / needs from user
+- **Indian English on ElevenLabs:** no premade voice is Indian (all US/UK/AU); library voices
+  (e.g. Muskaan, Hindi) get HTTP 402 `paid_plan_required` on the free plan (checked 23 Nov).
+  Either `VOICE=mock` locally (browser en-IN voice) or a paid plan + an Indian voice id.
 - **Rename the GitHub repo** `care-circle` -> `khayal` (Settings -> General); docs already use
   the new URL. Locally: in `.env` set `DATABASE_URL=sqlite:///./khayal.db` and rename
   `backend/care_circle.db` (+ `-wal`/`-shm`) to `khayal.db*` with servers stopped, or reseed.
@@ -109,10 +112,15 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
   never "real" (user's fallback). Voice = premade Sarah (Hindi verified, calm; library voices
   need a paid plan).
 
+- 2026-11-23: Demo parent speaks English (`language="en"`), voiced en-IN (Indian English) in
+  the simulator (explicit en-IN voice pick) and Twilio `<Say>`; Hindi stays per member.
 - 2026-11-23: Product name is **Khayal** (was Care Circle); old commit messages and tags keep
   the old name (history not rewritten). No CARE_CIRCLE env vars existed; only the DB default changed.
 
 ## Session log (newest first, one line each)
+- 2026-11-23: chore voice-indian-english — demo parent Kamla gets Indian English voice notes
+  (both seeds), simulator picks an en-IN voice (Rishi in Chrome on macOS), label "Indian
+  English", docs + 2 screenshots updated, ElevenLabs voices checked (none Indian on free plan); 392 tests.
 - 2026-11-23: chore rename-khayal — product renamed Care Circle -> Khayal everywhere (UI, chat
   and voice texts, MCP server name `khayal`, meta key `khayal/sender`, default DB `khayal.db`,
   packages `khayal-backend`/`khayal-dashboard`, repo URL); brand mark CC -> K; screenshots
