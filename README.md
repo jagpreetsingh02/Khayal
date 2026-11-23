@@ -199,7 +199,7 @@ After the quick start above (full script with timings: [docs/DEMO_SCRIPT.md](doc
 - **Parent-first sharing:** on the dashboard, **Sign out** → sign in as **Kamla** (the parent) →
   **Limits & sharing** → turn off *Medicines*. Signed in as Ravi again, medicines and refills
   say "not shared". (Turning off *Alerts* hides amber alerts; red alerts still reach the family.)
-- **Voice:** 🗣️ → “मैंने दवा ले ली” after a reminder marks the dose taken and answers with a
+- **Voice:** 🗣️ → “I took my medicine” after a reminder marks the dose taken and answers with a
   voice note. **📊 Weekly summary** sends the 7-day summary to the children.
 - **Narrow bot:** type `what's the weather?` → "I can only help with readings and medicines."
 - **Onboarding:** **Reset demo** starts a fresh family with consent *pending*: `hello` →
@@ -285,7 +285,7 @@ stretch); the full chat text stays in English. The demo parent is set to English
 - `VOICE=none`: text only.
 
 **Voice notes in (STT).** 🎤 in the simulator records in the browser; 🗣️ sends sample voice
-notes. With ElevenLabs, recordings go to Scribe (`scribe_v3`). The transcript is handled like a
+notes (in English). With ElevenLabs, recordings go to Scribe (`scribe_v3`). The transcript is handled like a
 typed reply: "मैंने दवा ले ली" / "I took my medicine" marks the dose taken, "My BP is 142 by 88"
 becomes a reading **that still needs the parent's "1"** after the read-back, anything else gets
 the fixed refusal. In mock mode only the sample voice notes are understood.

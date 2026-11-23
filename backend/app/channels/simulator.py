@@ -25,11 +25,11 @@ MAX_AUDIO_BYTES = 5 * 1024 * 1024
 # Sample voice notes for mock mode: (name -> what the parent says). The mock STT returns
 # exactly this text; with ElevenLabs, real recordings go to Scribe.
 VOICE_SAMPLES = {
-    "took_medicine_hi": "मैंने दवा ले ली",
+    "took_medicine_en": "I took my medicine",
     "bp_reading_en": "My BP is 142 by 88",
-    "sugar_hinglish": "Sugar 110 hai",
-    "bp_high_hi": "मेरा बीपी 186 बटा 121 है",
-    "yes_hi": "हाँ, सही है",
+    "sugar_en": "My sugar is 110",
+    "bp_high_en": "My BP is 186 by 121",
+    "yes_en": "Yes, that is right",
     "weather_en": "What is the weather today?",
 }
 FEED_LIMIT = 200  # messages kept per chat

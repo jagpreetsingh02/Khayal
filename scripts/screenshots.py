@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         # Voice: jump to the next reminder (Indian English voice note), the parent answers by voice;
         # the red-alert "Incoming call" cards stay in the children's panes.
         c.post("/simulator/api/advance", json={"to": "next_reminder"}).raise_for_status()
-        for v in ("took_medicine_hi", "sugar_hinglish"):
+        for v in ("took_medicine_en", "sugar_en"):
             c.post(
                 "/simulator/api/send", json={"sender_ref": PARENT_REF, "voice_sample": v}
             ).raise_for_status()

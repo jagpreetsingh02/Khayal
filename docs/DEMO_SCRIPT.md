@@ -151,7 +151,7 @@ Dashboard (as Ravi): **What the AI did**.
 ## Optional extras (if you have time)
 
 - Type `what's the weather?` in Kamla's chat: *"I can only help with readings and medicines."*
-- **🗣️** → *“मैंने दवा ले ली”* after a reminder: marked as taken, answered with a voice note.
+- **🗣️** → *“I took my medicine”* after a reminder: marked as taken, answered with a voice note.
 - **📊 Weekly summary**: the descriptive 7-day summary goes to the children.
 - **Reset demo**: a fresh family with consent *pending*; type `hello` to see onboarding.
 - With `LLM_PROVIDER=groq` and a key, use **📎** to upload a real photo of a meter.
