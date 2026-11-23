@@ -193,15 +193,24 @@ function hhmm(iso) {
                                                      timeZone: "Asia/Kolkata" });
 }
 const LANG = { hi: "hi-IN", ta: "ta-IN", en: "en-IN" };
-const LANG_NAME = { hi: "Hindi", ta: "Tamil", en: "English" };
+const LANG_NAME = { hi: "Hindi", ta: "Tamil", en: "Indian English" };
+// Pick an installed voice for the locale (e.g. en-IN); setting only `lang` lets some browsers
+// fall back to their default (often US English) voice.
+function voiceFor(tag) {
+  const want = tag.toLowerCase();
+  return speechSynthesis.getVoices().find((v) => v.lang.replace("_", "-").toLowerCase() === want) || null;
+}
 function speak(item) {
   if (item.audio_url) { new Audio(item.audio_url).play(); return; }
   if (!("speechSynthesis" in window)) { alert(item.voice_text); return; }
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(item.voice_text || item.text);
   u.lang = LANG[item.voice_lang] || "en-IN";
+  const v = voiceFor(u.lang);
+  if (v) u.voice = v;
   speechSynthesis.speak(u);
 }
+if ("speechSynthesis" in window) speechSynthesis.getVoices();  // start loading the voice list
 function voiceRow(item) {
   const row = el("div", "voice");
   const b = el("button", "play", "▶"); b.type = "button"; b.title = "Play voice note";

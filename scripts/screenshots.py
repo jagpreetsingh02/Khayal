@@ -117,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         sp.screenshot(path=OUT / "simulator.png")
         print("saved", OUT / "simulator.png")
 
-        # Voice: jump to the next reminder (Hindi voice note), the parent answers by voice;
+        # Voice: jump to the next reminder (Indian English voice note), the parent answers by voice;
         # the red-alert "Incoming call" cards stay in the children's panes.
         c.post("/simulator/api/advance", json={"to": "next_reminder"}).raise_for_status()
         for v in ("took_medicine_hi", "sugar_hinglish"):

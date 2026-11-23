@@ -12,7 +12,7 @@ from app.alerts.notifier import StoreNotifier
 from app.channels.service import KhayalService
 from app.channels.simulator import SimulatorChannel
 from app.config import get_settings
-from app.demo import CHILDREN, PARENT_REF, load_sample
+from app.demo import CHILDREN, PARENT_REF, load_sample, seed_fresh_family
 from app.main import create_app
 from app.reader.mock_reader import MockReader
 from app.storage.models import Refill
@@ -460,3 +460,13 @@ def test_readme_golden_path_on_seeded_data(dash):
     assert "your pharmacy will confirm" in dash.feed(dash.parent)[-1]
     assert dash.c.get("/api/audit", headers=h).json()["stats"]["ai_approve_calls"] == 0
     assert red["reason"].endswith("call 108/112.")
+
+
+def test_demo_parent_gets_indian_english_voice_notes():
+    """Both demo seeds (seed_demo.py and the simulator's fresh family) speak English to the
+    parent; the simulator and Twilio voice it with the en-IN locale."""
+    for seed in (seed_demo.seed, seed_fresh_family):
+        store = SQLiteStore(":memory:")
+        seed(store)
+        assert store.find_member_by_channel("simulator", PARENT_REF).language == "en"
+        store.close()

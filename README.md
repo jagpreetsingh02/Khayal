@@ -46,7 +46,7 @@ Everything is on one port; **Ctrl+C** stops it.
 | http://localhost:8000/simulator (the parent's chat, the children's phones, the live MCP log) | **🖼️** → **bp normal**, then the quick reply **1** | "I read 132/84, pulse 74 — correct?" → "Saved: 132/84, pulse 74." and a `log_reading` call in the MCP log |
 | Simulator | **🖼️** → **bp high** → **1** | Asked to rest 5 minutes and measure again; the family is **not** alerted yet |
 | Simulator | **⏩ Skip 5 minutes** → **🖼️** → **bp high** → **1** | **RED alert** in Ravi's and Priya's phones, plus an **Incoming call** card |
-| Simulator (demo clock) | **⏰ Next reminder**, then **⏩ 30 min** without replying (repeat once if needed) | A medicine reminder with a Hindi voice note (▶), one follow-up, then an **AMBER** "2 medicine reminders were marked missed" alert to the children |
+| Simulator (demo clock) | **⏰ Next reminder**, then **⏩ 30 min** without replying (repeat once if needed) | A medicine reminder with an Indian English voice note (▶), one follow-up, then an **AMBER** "2 medicine reminders were marked missed" alert to the children |
 | http://localhost:8000/dashboard/ → token `change-me` → **Continue** → **Ravi Sharma** | **Medicines** → **Simulate low stock (demo)** on Telma 40 | The AI calls `request_refill` over MCP; the children get "Refill request…" |
 | Dashboard | **Overview** → **Approve** | Kamla's chat: "Refill approved for Telma 40 (30); your pharmacy will confirm." |
 | Dashboard | **What the AI did** | Every MCP tool call; **Approvals by the AI: 0**; `approve_refill: does not exist` |
@@ -208,7 +208,7 @@ After the quick start above (full script with timings: [docs/DEMO_SCRIPT.md](doc
 
 ## Screenshots
 
-![Simulator: Hindi voice-note reminder and replies in the parent's chat, and an Incoming call card for the red alert in each child's pane](docs/screenshots/voice-and-call.png)
+![Simulator: Indian English voice-note reminder and replies in the parent's chat, and an Incoming call card for the red alert in each child's pane](docs/screenshots/voice-and-call.png)
 
 | Trends with doctor-set bands | What the AI did |
 |---|---|
@@ -268,10 +268,12 @@ The simulator's **demo clock** (⏰ Next reminder, ⏩ 30 min, ⏩ 1 day) moves 
 the API and the MCP server, running the jobs every 5 simulated minutes. Tests drive the same
 code through `Scheduler.run(now)`.
 
-**Voice notes out (TTS).** Messages carry a short phrase in the member's language (Hindi and
-English; Tamil for reminders and replies, as a stretch); the full chat text stays in English.
+**Voice notes out (TTS).** Messages carry a short phrase in the member's language (English,
+voiced with the Indian English `en-IN` locale, or Hindi; Tamil for reminders and replies, as a
+stretch); the full chat text stays in English. The demo parent is set to English.
 
-- `VOICE=mock` (default): "voice note" bubbles that your browser reads aloud. No keys.
+- `VOICE=mock` (default): "voice note" bubbles that your browser reads aloud with an installed
+  `en-IN` voice when there is one (e.g. Rishi, Tara or Aman on macOS). No keys.
 - `VOICE=elevenlabs` + `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`: real MP3 voice notes.
   Model `eleven_v4_turbo` (lists Hindi and Tamil in ElevenLabs' models overview, checked 23 Nov
   2026; `eleven_flash_v2_5` is cheaper per character). Audio is cached by text, so repeated

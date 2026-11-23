@@ -28,7 +28,7 @@ medicine time has just passed). That is fine; leave it unanswered.
 | Item | Value |
 |---|---|
 | Family | Sharma family |
-| Parent | **Kamla Sharma**, Hindi voice notes, consent granted, simulator number +919800000001 |
+| Parent | **Kamla Sharma**, Indian English voice notes, consent granted, simulator number +919800000001 |
 | Children | **Ravi Sharma** (+919800000002), **Priya Sharma** (+919800000003), English |
 | Readings | 14 days of morning BP (~134/84, mild rise in week 2), some evening BP, fasting and post-meal glucose, one low fasting glucose of 64 five days ago (amber alert) |
 | Doctor-set limits | BP limit 140/90, glucose amber above 250 (labelled "set by the doctor"); defaults: severe BP 180/120 needs a repeat, glucose red below 54, amber below 70, 2 missed doses a day = amber |
@@ -91,7 +91,7 @@ Show the simulator.
 > says yes."
 
 2. Click **⏰ Next reminder**. The demo clock jumps to the next medicine time; Kamla gets e.g.
-   *"8:30 AM: time for Glycomet 500. Reply 1 when taken, 2 if skipped."* with a Hindi voice note
+   *"8:30 AM: time for Glycomet 500. Reply 1 when taken, 2 if skipped."* with an Indian English voice note
    (click ▶ to play it).
 3. Don't reply. Click **⏩ 30 min**: one gentle follow-up, *"Did you take …? Reply 1 if you have
    taken it."*
@@ -99,7 +99,7 @@ Show the simulator.
    Ravi and Priya get *"AMBER alert for Kamla Sharma: 2 medicine reminders were marked missed on
    <date>."* (Usually one or two rounds. Amber never rings the phone.)
 
-> **Say:** "Reminders come as Hindi voice notes. If she misses two in a day, the family gets an
+> **Say:** "Reminders come as voice notes in Indian English. If she misses two in a day, the family gets an
 > amber alert, not an alarm."
 
 ### 2:20 Low stock → AI requests refill → family approves (50 s)
