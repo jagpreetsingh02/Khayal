@@ -352,7 +352,10 @@ there needs a public audio URL; see the roadmap).
 
 ## Team
 
-**Team SHERRR**: Jagpreet Singh ([github.com/jagpreetsingh02](https://github.com/jagpreetsingh02)).
+**Team SHERRR**:
+
+- Jagpreet Singh ([github.com/jagpreetsingh02](https://github.com/jagpreetsingh02))
+- Swetank Kumar
 
 ## License
 
