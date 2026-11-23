@@ -163,3 +163,10 @@ def test_kind_filter_keeps_only_that_kind(tmp_path: Path, capsys):
     assert accuracy.main(["--samples", str(tmp_path), "--kind", "meter"]) == 0
     out = capsys.readouterr().out
     assert "photos: 2" in out and "strip " not in out
+
+
+def test_match_filters_by_file_glob(tmp_path: Path, capsys):
+    _two_meter_labels(tmp_path)
+    assert accuracy.main(["--samples", str(tmp_path), "--match", "GLUCOSE_*"]) == 0
+    out = capsys.readouterr().out
+    assert "photos: 1" in out and "glucose" in out and "bp " not in out

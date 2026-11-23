@@ -5,6 +5,7 @@
     uv run python ../scripts/accuracy_test.py --reader groq         # needs GROQ_API_KEY
     uv run python ../scripts/accuracy_test.py --reader groq --real-only --yes
     uv run python ../scripts/accuracy_test.py --reader groq --samples DIR --kind meter --pace 21
+    uv run python ../scripts/accuracy_test.py --reader groq --samples DIR --match 'glucose_*'
 
 A real reader spends API quota: the script estimates the tokens first and asks to continue
 (`--yes` skips the question; without a terminal it stops unless `--yes` is given), then prints
@@ -22,6 +23,7 @@ import sys
 import time
 from collections import defaultdict
 from collections.abc import Callable
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -195,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--real-only", action="store_true", help="skip synthetic_* samples")
     ap.add_argument("--yes", action="store_true", help="don't ask before spending real API quota")
     ap.add_argument("--kind", choices=["meter", "strip"], help="only test this kind of photo")
+    ap.add_argument("--match", help="only files matching this glob, e.g. 'glucose_*'")
     ap.add_argument("--pace", type=float, default=0.0, help="seconds to wait between photos")
     args = ap.parse_args(argv)
 
@@ -203,6 +206,8 @@ def main(argv: list[str] | None = None) -> int:
         labels = [lb for lb in labels if not lb.synthetic]
     if args.kind:
         labels = [lb for lb in labels if lb.kind == args.kind]
+    if args.match:
+        labels = [lb for lb in labels if fnmatch(lb.file.lower(), args.match.lower())]
     skipped: list[str] = []
     if args.reader != "mock":  # a real reader needs the actual photo
         skipped = [lb.file for lb in labels if not (args.samples / lb.file).is_file()]
