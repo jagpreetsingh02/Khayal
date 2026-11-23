@@ -99,3 +99,67 @@ def test_real_reader_with_yes_reports_api_tokens(monkeypatch, capsys):
     assert accuracy.main(["--reader", "groq", "--yes"]) == 0
     out = capsys.readouterr().out
     assert "Estimated ~" in out and "reported by the API" in out
+
+
+def _two_meter_labels(tmp_path: Path) -> None:
+    labels = {
+        "samples": [
+            {
+                "file": "bp_a.jpg",
+                "kind": "meter",
+                "expected": {"device_type": "bp", "systolic": 140, "diastolic": 90},
+            },
+            {
+                "file": "glucose_a.jpg",
+                "kind": "meter",
+                "expected": {
+                    "device_type": "glucose",
+                    "glucose_value": 120,
+                    "glucose_unit": "mg/dL",
+                },
+            },
+            {
+                "file": "strip_a.jpg",
+                "kind": "strip",
+                "expected": {"brand": "Telma", "strength": "40"},
+            },
+        ]
+    }
+    (tmp_path / "labels.json").write_text(json.dumps(labels))
+
+
+def test_said_unreadable_is_counted_apart_from_read_wrong(tmp_path: Path, capsys):
+    _two_meter_labels(tmp_path)
+
+    class Mixed(MockReader):
+        def read_meter(self, image: ImageInput) -> MeterReading:
+            r = super().read_meter(image)
+            if r.device_type == "bp":  # refuses to guess
+                return MeterReading(device_type="unknown", legible=False)
+            return r.model_copy(update={"glucose_value": 121})  # wrong number
+
+    from app.reader.labels import load_labels
+
+    result = accuracy.evaluate(Mixed(tmp_path), load_labels(tmp_path), tmp_path)
+    accuracy.report("test", result, [])
+    out = capsys.readouterr().out
+    assert "Misses: 2 = 1 said unreadable (asks for a new photo) + 1 read wrong + 0 reader" in out
+    assert "bp_a.jpg [said unreadable]" in out
+    lines = {" ".join(line.split()) for line in out.splitlines()}
+    assert "bp 0.0% (0/1)" in lines and "strip 100.0% (1/1)" in lines
+
+
+def test_pace_sleeps_between_photos_only(tmp_path: Path):
+    _two_meter_labels(tmp_path)
+    from app.reader.labels import load_labels
+
+    naps: list[float] = []
+    accuracy.evaluate(MockReader(tmp_path), load_labels(tmp_path), tmp_path, 21, naps.append)
+    assert naps == [21, 21]  # 3 photos -> 2 waits, none before the first
+
+
+def test_kind_filter_keeps_only_that_kind(tmp_path: Path, capsys):
+    _two_meter_labels(tmp_path)
+    assert accuracy.main(["--samples", str(tmp_path), "--kind", "meter"]) == 0
+    out = capsys.readouterr().out
+    assert "photos: 2" in out and "strip " not in out
