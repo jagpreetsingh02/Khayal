@@ -7,7 +7,7 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 ## Current status
 - Current phase: **Phase 6 — polish + AWS design: DONE** (branch `phase-6-polish-aws`, merged to
   `main`, tag `phase-6-done`). No AWS resource created; nothing deployed.
-- Current branch: `main` (chore `chore/team-accuracy-voice` merged, tag `team-accuracy-voice-done`)
+- Current branch: `main` (chore `chore/rename-khayal` merged, tag `rename-khayal-done`)
 - Next step: **submission support only** (deadline 24 Nov). Optional small chunks, each on its own
   branch: (a) score the 6 unscored glucose images once Groq's daily quota resets (~13k tokens,
   command in `samples/generated_medical_test_images_jpg/README.md`) and update README numbers;
@@ -21,6 +21,9 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 - [x] Phase 5 — voice + reminders · [x] Phase 6 — quick start, demo script, AWS design, hygiene
 
 ## Blockers / needs from user
+- **Rename the GitHub repo** `care-circle` -> `khayal` (Settings -> General); docs already use
+  the new URL. Locally: in `.env` set `DATABASE_URL=sqlite:///./khayal.db` and rename
+  `backend/care_circle.db` (+ `-wal`/`-shm`) to `khayal.db*` with servers stopped, or reseed.
 - **Real photos** of Indian home devices for a real accuracy number: none yet. Public sets were
   unusable (Oxford zip gone/no licence; Roboflow needs an account key + digit-box labels only).
   Optional: a free Roboflow API key would allow a public-photo run.
@@ -106,7 +109,14 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
   never "real" (user's fallback). Voice = premade Sarah (Hindi verified, calm; library voices
   need a paid plan).
 
+- 2026-11-23: Product name is **Khayal** (was Care Circle); old commit messages and tags keep
+  the old name (history not rewritten). No CARE_CIRCLE env vars existed; only the DB default changed.
+
 ## Session log (newest first, one line each)
+- 2026-11-23: chore rename-khayal — product renamed Care Circle -> Khayal everywhere (UI, chat
+  and voice texts, MCP server name `khayal`, meta key `khayal/sender`, default DB `khayal.db`,
+  packages `khayal-backend`/`khayal-dashboard`, repo URL); brand mark CC -> K; screenshots
+  regenerated (script now also captures voice-and-call.png); fresh clone checked; 391 tests.
 - 2026-11-23: chore team-accuracy-voice — Swetank Kumar in Team; accuracy_test `--kind/--pace/
   --match`, per-device score, unreadable-vs-wrong split; labelled 24 AI-generated images; Groq run
   16/22 scored (BP 11/13, glucose 3/3, 0 refusals; daily TPD hit); ElevenLabs live TTS+STT; 391 tests.
