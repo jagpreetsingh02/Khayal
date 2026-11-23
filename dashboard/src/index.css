@@ -294,14 +294,14 @@ small {
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 800;
-  font-size: 0.8rem;
+  font-size: 1.05rem;
   letter-spacing: 0.02em;
 }
 .brand-lg .brand-mark {
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  font-size: 1rem;
+  font-size: 1.35rem;
 }
 .brand-lg h1 {
   font-size: 1.4rem;

@@ -102,7 +102,7 @@ function Shell({ onSignOut }: { onSignOut: () => void }) {
         <div className="topbar-inner">
           <div className="brand">
             <span className="brand-mark" aria-hidden="true">
-              CC
+              K
             </span>
             <div>
               <strong>{parent.name}</strong>
