@@ -208,7 +208,7 @@ After the quick start above (full script with timings: [docs/DEMO_SCRIPT.md](doc
 
 ## Screenshots
 
-![Simulator: Indian English voice-note reminder and replies in the parent's chat, and an Incoming call card for the red alert in each child's pane](docs/screenshots/voice-and-call.png)
+![Simulator: Indian English voice-note reminder, the parent's English voice-note replies, and an Incoming call card for the red alert in each child's pane](docs/screenshots/voice-and-call.png)
 
 | Trends with doctor-set bands | What the AI did |
 |---|---|
