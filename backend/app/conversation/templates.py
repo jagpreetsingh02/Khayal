@@ -9,7 +9,7 @@ from app.storage.models import Reading
 CONSENT_TEXT_VERSION = "2026-11-v1"
 
 CONSENT_NOTICE = (
-    "Namaste {name}! Your family invited you to Care Circle. Send a photo of your BP or sugar "
+    "Namaste {name}! Your family invited you to Khayal. Send a photo of your BP or sugar "
     "meter and I will note the numbers, remind you about medicines, and share readings and "
     "alerts with your family. Reply 1 (Haan / Yes) to agree. Reply STOP any time to pause."
 )
@@ -18,8 +18,8 @@ CONSENT_THANKS = (
     "medicine strip."
 )
 PAUSED_NOW = "Paused. Nothing new will be shared with your family. Reply START to turn it on again."
-PAUSED = "Care Circle is paused. Reply START to turn it on again."
-RESUMED = "Care Circle is on again. " + CONSENT_THANKS
+PAUSED = "Khayal is paused. Reply START to turn it on again."
+RESUMED = "Khayal is on again. " + CONSENT_THANKS
 
 OFF_TOPIC = "I can only help with readings and medicines."
 VOICE_UNCLEAR = (
@@ -31,9 +31,7 @@ HELP = (
     "type a reading, like 142/88 or sugar 110."
 )
 NOTHING_TO_CONFIRM = "There is nothing to confirm right now. " + HELP
-UNKNOWN_SENDER = (
-    "This number is not registered with Care Circle. Please ask your family to add you."
-)
+UNKNOWN_SENDER = "This number is not registered with Khayal. Please ask your family to add you."
 NOT_A_PARENT = "This chat is for your parent's readings. Please use the family dashboard."
 
 RETAKE_TIPS = (

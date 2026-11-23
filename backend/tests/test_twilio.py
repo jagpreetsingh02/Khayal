@@ -157,7 +157,7 @@ def test_outside_24h_window_uses_the_sandbox_template_or_is_not_sent():
     [sent] = fake.messages
     assert "Body" not in sent and sent["ContentSid"] == "HXabc"
     assert json.loads(sent["ContentVariables"])["1"] == "RED alert for Kamla"
-    assert template_variables("Saved")["1"] == "Care Circle update"
+    assert template_variables("Saved")["1"] == "Khayal update"
 
 
 def test_webhook_rejects_bad_signature_and_handles_good_one(monkeypatch):

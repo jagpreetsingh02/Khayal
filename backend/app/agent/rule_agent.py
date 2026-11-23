@@ -6,7 +6,7 @@
 - no repeat within 15 minutes of a first severe BP: `alert_family` amber.
 - confirmed medicine strip: `create_reminder`.
 
-Every tool call goes through a real MCP client to the Care Circle MCP server over
+Every tool call goes through a real MCP client to the Khayal MCP server over
 streamable HTTP (MCP_SERVER_URL), with the parent's sender identity in `_meta`; the LLM
 (if any) never sets it. Passing a FastMCP object instead of a URL runs the same client
 in-process: tests and the offline terminal demo only.

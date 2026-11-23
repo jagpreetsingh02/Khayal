@@ -15,21 +15,21 @@ from fastapi.staticfiles import StaticFiles
 
 from app import clock
 from app.api.simulator import router as simulator_router
-from app.channels.service import CareCircleService, build_service
+from app.channels.service import KhayalService, build_service
 from app.config import get_settings
 from app.demo import ensure_demo_family
 
 log = logging.getLogger(__name__)
 TICK_SECONDS = 30  # read-back expiry, the 15-minute no-repeat amber, and the scheduler
 DASHBOARD_DIST = Path(__file__).resolve().parents[2] / "dashboard" / "dist"
-NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Care Circle dashboard</title>
+NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Khayal dashboard</title>
 <body style="font-family:system-ui;max-width:40rem;margin:3rem auto;padding:0 1rem">
 <h1>Dashboard not built yet</h1><p>Build it once, then reload this page:</p>
 <pre>cd dashboard && npm install && npm run build</pre>
 <p>Or run the dev server: <code>npm run dev</code> (http://localhost:5173/dashboard/).</p>"""
 
 
-async def _ticker(service: CareCircleService, every: float) -> None:
+async def _ticker(service: KhayalService, every: float) -> None:
     while True:
         await asyncio.sleep(every)
         try:
@@ -39,7 +39,7 @@ async def _ticker(service: CareCircleService, every: float) -> None:
             log.exception("tick / scheduler failed")
 
 
-def create_app(service: CareCircleService | None = None, tick_seconds: float = TICK_SECONDS):
+def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_SECONDS):
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         svc = app.state.service = service or build_service()
@@ -57,7 +57,7 @@ def create_app(service: CareCircleService | None = None, tick_seconds: float = T
             with suppress(asyncio.CancelledError):
                 await task
 
-    app = FastAPI(title="Care Circle", version="0.5.0", lifespan=lifespan)
+    app = FastAPI(title="Khayal", version="0.5.0", lifespan=lifespan)
     app.include_router(simulator_router)
 
     @app.middleware("http")

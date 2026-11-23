@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.agent.rule_agent import RuleAgent
 from app.alerts.notifier import StoreNotifier
-from app.channels.service import CareCircleService
+from app.channels.service import KhayalService
 from app.channels.simulator import SimulatorChannel
 from app.config import get_settings
 from app.demo import CHILDREN, PARENT_REF, load_sample
@@ -34,7 +34,7 @@ seed_demo = _seed_module()
 
 
 class Dash:
-    def __init__(self, client: TestClient, store: SQLiteStore, service: CareCircleService):
+    def __init__(self, client: TestClient, store: SQLiteStore, service: KhayalService):
         self.c, self.store, self.service = client, store, service
         self.parent = store.find_member_by_channel("simulator", PARENT_REF)
         self.ravi = store.find_member_by_channel("simulator", CHILDREN[0][1])
@@ -62,7 +62,7 @@ def dash(monkeypatch):
     store = SQLiteStore(":memory:")
     seed_demo.seed(store)
     server = create_server(store, StoreNotifier(lambda: store))  # in-process MCP for tests
-    service = CareCircleService(
+    service = KhayalService(
         store, MockReader(), RuleAgent(store, server), [SimulatorChannel(load_sample)]
     )
     with TestClient(create_app(service, tick_seconds=0)) as client:
@@ -415,7 +415,7 @@ def test_mcp_tools_endpoint_shows_no_approve_tool(dash):
 def test_dashboard_page_is_served_or_explains_the_build(dash):
     r = dash.c.get("/dashboard/")
     assert r.status_code in (200, 503)
-    assert "Care Circle" in r.text
+    assert "Khayal" in r.text
 
 
 # ---------- README golden path on seeded data (mock mode) ----------

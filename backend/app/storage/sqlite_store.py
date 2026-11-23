@@ -132,7 +132,7 @@ def _from_row(cls: type[M], row: sqlite3.Row) -> M:
 
 
 def path_from_url(database_url: str) -> str:
-    """`sqlite:///./care_circle.db` -> `./care_circle.db`; `sqlite:///:memory:` -> `:memory:`."""
+    """`sqlite:///./khayal.db` -> `./khayal.db`; `sqlite:///:memory:` -> `:memory:`."""
     prefix = "sqlite:///"
     if not database_url.startswith(prefix):
         raise ValueError(f"Not a sqlite URL: {database_url!r}")

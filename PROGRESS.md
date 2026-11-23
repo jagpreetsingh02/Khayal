@@ -1,8 +1,8 @@
-# PROGRESS — Care Circle (read this first every session)
+# PROGRESS — Khayal (read this first every session)
 
 Deadline: **24 Nov 2026, 11:59 PM IST** — PPT + video + GitHub repo link on Devnovate.
 Spec: `docs/PROJECT_BRIEF.md` (read only the sections you need). Rules: `CLAUDE.md`.
-Repo: https://github.com/jagpreetsingh02/care-circle (public)
+Repo: https://github.com/jagpreetsingh02/khayal (public)
 
 ## Current status
 - Current phase: **Phase 6 — polish + AWS design: DONE** (branch `phase-6-polish-aws`, merged to

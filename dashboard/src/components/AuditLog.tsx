@@ -137,7 +137,7 @@ export function AuditPage({ parentId }: { parentId: string }) {
               <code className="tool-missing">approve_refill: does not exist</code>
             </div>
             <p className="muted small">
-              {tools.data.live ? 'Listed live from the Care Circle MCP server. ' : 'MCP server not reachable; showing the agent allowlist. '}
+              {tools.data.live ? 'Listed live from the Khayal MCP server. ' : 'MCP server not reachable; showing the agent allowlist. '}
               The AI can log, remind and request. It cannot approve, prescribe or diagnose.
             </p>
           </>

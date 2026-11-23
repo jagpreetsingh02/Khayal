@@ -1,4 +1,4 @@
-"""Talk to the running Care Circle MCP server through a real MCP client (streamable HTTP).
+"""Talk to the running Khayal MCP server through a real MCP client (streamable HTTP).
 
     cd backend
     uv run python ../scripts/seed_demo.py           # once: demo family

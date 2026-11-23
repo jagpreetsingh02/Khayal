@@ -1,7 +1,7 @@
 [project]
-name = "care-circle-backend"
+name = "khayal-backend"
 version = "0.1.0"
-description = "Care Circle backend: FastAPI app (webhooks, simulator, dashboard API) and FastMCP server."
+description = "Khayal backend: FastAPI app (webhooks, simulator, dashboard API) and FastMCP server."
 readme = "../README.md"
 requires-python = ">=3.11"
 dependencies = [

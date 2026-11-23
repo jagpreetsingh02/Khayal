@@ -60,7 +60,7 @@ function ThresholdEditor({ parentId, parent }: { parentId: string; parent: strin
     <form onSubmit={save} className="stack">
       <p className="doctor-label">
         <Icon name="lock" size={16} /> Set by {parent}'s doctor. Enter only what the doctor wrote
-        down; Care Circle does not choose limits.
+        down; Khayal does not choose limits.
       </p>
       {GROUPS.map((g) => (
         <fieldset key={g.title} className="limits">

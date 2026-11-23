@@ -1,6 +1,6 @@
-# Care Circle — rules for Claude Code
+# Khayal — rules for Claude Code
 
-Care Circle is a WhatsApp-first health helper for elderly parents in India, built for
+Khayal is a WhatsApp-first health helper for elderly parents in India, built for
 wHACKiest 2026, Track 1 "Make MCP Matter — Less Magic, More Utility".
 A parent sends a photo of a BP monitor or glucometer screen → the AI reads it → the parent
 confirms → it is logged through MCP tools → the family is alerted if out of range → family

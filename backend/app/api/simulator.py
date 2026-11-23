@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app import clock
 from app.channels.base import ChannelError
-from app.channels.service import CareCircleService
+from app.channels.service import KhayalService
 from app.channels.simulator import VOICE_SAMPLES, SimulatorEvent
 from app.config import get_settings
 from app.demo import ensure_demo_family, load_sample, sample_photos, seed_fresh_family
@@ -23,7 +23,7 @@ PAGE = Path(__file__).parent / "static" / "simulator.html"
 router = APIRouter(prefix="/simulator", tags=["simulator"])
 
 
-def _service(request: Request) -> CareCircleService:
+def _service(request: Request) -> KhayalService:
     return request.app.state.service
 
 

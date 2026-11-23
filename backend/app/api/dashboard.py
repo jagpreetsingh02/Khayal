@@ -27,7 +27,7 @@ from app.alerts.thresholds import (
     validate_threshold_update,
 )
 from app.api.auth import current_member, demo_token_ok, sign_session
-from app.channels.service import CareCircleService
+from app.channels.service import KhayalService
 from app.config import get_settings
 from app.conversation import templates as tpl
 from app.demo import ensure_demo_family
@@ -76,7 +76,7 @@ Me = Annotated[Member, Depends(current_member)]  # the signed-in family member
 # --- helpers ---
 
 
-def _svc(request: Request) -> CareCircleService:
+def _svc(request: Request) -> KhayalService:
     return request.app.state.service
 
 

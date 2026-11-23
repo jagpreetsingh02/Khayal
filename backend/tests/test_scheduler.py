@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app import clock
 from app.agent.rule_agent import RuleAgent
 from app.alerts.notifier import StoreNotifier
-from app.channels.service import CareCircleService
+from app.channels.service import KhayalService
 from app.channels.simulator import SimulatorChannel
 from app.conversation.messages import Incoming
 from app.demo import load_sample
@@ -92,7 +92,7 @@ class World:
         )
         self.server = create_server(self.store, StoreNotifier(lambda: self.store))
         self.sim = SimulatorChannel(load_sample)
-        self.svc = CareCircleService(
+        self.svc = KhayalService(
             self.store,
             MockReader(),
             RuleAgent(self.store, self.server),

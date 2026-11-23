@@ -56,7 +56,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
             CC
           </span>
           <div>
-            <h1>Care Circle</h1>
+            <h1>Khayal</h1>
             <p>Family dashboard</p>
           </div>
         </div>

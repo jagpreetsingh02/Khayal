@@ -44,7 +44,7 @@ Times are cumulative. "Say" is the voice-over.
 Show the simulator.
 
 > **Say:** "Kamla lives alone and manages her BP and diabetes herself. Her children, Ravi and
-> Priya, live in other cities. She already owns a BP monitor. Care Circle turns a WhatsApp photo of its screen into a
+> Priya, live in other cities. She already owns a BP monitor. Khayal turns a WhatsApp photo of its screen into a
 > confirmed reading her family can see. On the left is Kamla's chat; on the side, her children's
 > phones; below, every MCP tool call the AI makes."
 
@@ -108,7 +108,7 @@ Show the simulator.
    - The MCP log (simulator) shows `request_refill`.
    - Kamla: *"Your Telma 40 is running low (3 left). I have asked your family to approve a refill."*
    - Ravi and Priya: *"Refill request for Kamla Sharma: Telma 40 x30. Approve or reject it on the
-     Care Circle dashboard."*
+     Khayal dashboard."*
 2. Dashboard: **Overview** → *Refill request waiting for you* → **Approve**.
    - Kamla: *"Refill approved for Telma 40 (30); your pharmacy will confirm."*
    - Priya: *"Ravi Sharma approved the refill for Telma 40 x30. Sent to the demo partner pharmacy
@@ -144,7 +144,7 @@ Dashboard (as Ravi): **What the AI did**.
 - Click a row (e.g. `request_refill`) to show its arguments and result; filter **AI** / **People**.
 
 > **Say:** "Every tool call the AI made, every refusal, and every family decision is logged.
-> Zero approvals by the AI, because it can't. Less magic, more utility: Care Circle."
+> Zero approvals by the AI, because it can't. Less magic, more utility: Khayal."
 
 **End at 4:00.**
 

@@ -1,6 +1,6 @@
 # AWS architecture (production design)
 
-**Status, stated plainly:** Care Circle runs today as a local demo (mock mode, SQLite, one
+**Status, stated plainly:** Khayal runs today as a local demo (mock mode, SQLite, one
 machine). **Nothing is deployed on AWS, and no AWS service is called by this code.** This page
 shows how each part would map to AWS in production, all in **Asia Pacific (Mumbai),
 `ap-south-1`**, and marks for every row what exists in the repo today and what is design only.
@@ -26,7 +26,7 @@ flowchart LR
   WH --> S3["S3: photo / audio<br/>short-lived, encrypted"]
   WH --> BR["Bedrock vision model<br/>strict JSON, no tools"]
   WH --> AG["Agent<br/>(Lambda; AgentCore Runtime if available)"]
-  AG -->|"MCP, streamable HTTP"| MCP["Care Circle MCP server<br/>(AgentCore Gateway/Runtime or Lambda)"]
+  AG -->|"MCP, streamable HTTP"| MCP["Khayal MCP server<br/>(AgentCore Gateway/Runtime or Lambda)"]
   MCP --> DDB[("DynamoDB<br/>readings, meds, alerts,<br/>refills, audit_log, outbox")]
   SCH["EventBridge Scheduler<br/>reminders, follow-ups,<br/>weekly summary"] --> JOB["Lambda: scheduler jobs"]
   JOB --> AG

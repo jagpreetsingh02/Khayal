@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
             pg = ctx.new_page()
             pg.goto(dash)
             if session:
-                pg.evaluate(f"localStorage.setItem('care-circle-session', '{session}')")
+                pg.evaluate(f"localStorage.setItem('khayal-session', '{session}')")
             return pg
 
         def shot(pg, tab: str, name: str, wait: str, full: bool = True) -> None:
