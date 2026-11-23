@@ -7,7 +7,7 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 ## Current status
 - Current phase: **Phase 6 — polish + AWS design: DONE** (branch `phase-6-polish-aws`, merged to
   `main`, tag `phase-6-done`). No AWS resource created; nothing deployed.
-- Current branch: `main` (chore `chore/voice-indian-english` merged, tag `voice-indian-english-done`)
+- Current branch: `main` (chore `chore/english-voice-samples` merged, tag `english-voice-samples-done`)
 - Next step: **submission support only** (deadline 24 Nov). Optional small chunks, each on its own
   branch: (a) score the 6 unscored glucose images once Groq's daily quota resets (~13k tokens,
   command in `samples/generated_medical_test_images_jpg/README.md`) and update README numbers;
@@ -118,6 +118,8 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
   the old name (history not rewritten). No CARE_CIRCLE env vars existed; only the DB default changed.
 
 ## Session log (newest first, one line each)
+- 2026-11-23: chore english-voice-samples — simulator 🗣️ samples now English (took_medicine_en,
+  bp_reading_en, sugar_en, bp_high_en, yes_en, weather_en); Hindi speech parsing still tested; 393 tests.
 - 2026-11-23: chore voice-indian-english — demo parent Kamla gets Indian English voice notes
   (both seeds), simulator picks an en-IN voice (Rishi in Chrome on macOS), label "Indian
   English", docs + 2 screenshots updated, ElevenLabs voices checked (none Indian on free plan); 392 tests.
