@@ -351,6 +351,8 @@ def test_clock_offset_is_shared_through_the_store(w):
 
 def test_simulator_advance_endpoint(w):
     set_clock("07:58")
+    # The offset is negative when the test runs after 07:58 IST, so check it moved forward.
+    before = round(clock.offset().total_seconds() / 60)
     with TestClient(create_app(w.svc, tick_seconds=0)) as client:
         w.store.find_member_by_channel("simulator", PARENT)  # demo family exists already
         r = client.post("/simulator/api/advance", json={"to": "next_reminder"})
@@ -359,7 +361,7 @@ def test_simulator_advance_endpoint(w):
         texts = [i["text"] for i in state["parent"]["feed"] if i["direction"] == "out"]
         assert any("time for" in t for t in texts)
         assert any("later (demo clock)" in (i["text"] or "") for i in state["parent"]["feed"])
-        assert state["clock"]["offset_minutes"] > 0
+        assert state["clock"]["offset_minutes"] >= before + 1
         assert client.post("/simulator/api/advance", json={}).status_code == 422
 
 
