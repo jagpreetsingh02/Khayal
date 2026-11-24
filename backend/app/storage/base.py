@@ -37,6 +37,10 @@ class ConflictError(ValueError):
 
 
 class Store(ABC):
+    @abstractmethod
+    def ping(self) -> None:
+        """A trivial query; raises if the database does not answer (used by /health)."""
+
     # --- families / members ---
     @abstractmethod
     def add_family(self, family: Family) -> Family: ...

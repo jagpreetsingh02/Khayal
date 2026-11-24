@@ -84,8 +84,12 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"\n  Khayal is running (APP_MODE={settings.app_mode}, "
             f"CHANNEL={settings.channel}, LLM_PROVIDER={settings.llm_provider})\n"
-            f"  Simulator:  http://localhost:{args.port}/simulator\n"
-            f"  Dashboard:  http://localhost:{args.port}/dashboard/"
+            + (
+                f"  Simulator:  http://localhost:{args.port}/simulator\n"
+                if settings.app_mode == "mock"
+                else "  Simulator:  off (mock mode only)\n"
+            )
+            + f"  Dashboard:  http://localhost:{args.port}/dashboard/"
             + ("" if built else "  (not built: cd dashboard && npm run build)")
             + "\n"
             f"  MCP server: {settings.mcp_server_url}\n"

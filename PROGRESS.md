@@ -2,38 +2,36 @@
 
 Submitted 24 Nov 2026 (Devnovate). Repo changes allowed until **26 Nov 2026**; pitch after.
 Spec: `docs/PROJECT_BRIEF.md` (read only the sections you need). Rules: `CLAUDE.md`.
-Repo: https://github.com/jagpreetsingh02/khayal (public)
+Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated)
 
 ## Current status
 - Submission (Phase 1 of judging) is in: tag **`submission-phase1`** = the exact submitted
   commit. Repo may change until **26 Nov 2026**; `main` must stay demo-ready for the pitch.
-- Current work stream: **Hardening** (below). H1 + H2 done and merged (tags `hardening-h1-done`,
-  `hardening-h2-done`).
+- Current work stream: **Hardening** (below). H1, H2, H3 done and merged (tags
+  `hardening-h1-done`, `hardening-h2-done`, `hardening-h3-done`). CI green on `main`.
 - Current branch: `main`
-- **Next step: H3 (types, CI, Docker)** on branch `hardening-h3-ci` (scope to be given by the user).
-  Suggested extra for H3 or later: turn the web simulator off (or put it behind sign-in)
-  outside mock mode; it is unauthenticated (README "Security", still demo-grade).
+- **Next step: none scheduled; ask the user.** Candidates (README "Production readiness"):
+  Postgres/DynamoDB adapter, schema versioning, structured logging, DPDP export/delete,
+  durable inbox. Keep `main` demo-ready for the pitch (repo frozen after 26 Nov).
 
 ## Hardening (production) — one branch per phase, merged with --no-ff, tagged when done
-- [x] **H1 safety bugs** (`hardening-h1-safety`, tag `hardening-h1-done`): outbox claim/lease
-  + retries (30 s, 1 m, 2 m, 5 m, then 10 m; red alert messages forever, others stop at 8;
-  final + red failures -> audit `delivery_failed` + ERROR log); weekly summary via outbox;
-  dashboard "Not delivered yet"; inbound dedup (`inbound_seen`: Twilio MessageSid, Telegram
-  update_id, webhook + polling); webhooks ack then process in background; per-member FIFO
-  turns (`app/channels/turns.py`) replace the global lock.
-  **Known gap:** crash between webhook ack and end of processing loses that message (id
-  already recorded; channel won't resend). Durable inbox = future work. Proactive *parent*
-  messages (reminders, follow-ups, low-stock note) are still sent directly, not retried.
-- [x] **H2 security** (`hardening-h2-security`, tag `hardening-h2-done`): sessions signed with
-  SESSION_SECRET (member, iat, exp 12 h, per-member session version; logout bumps it = all
-  devices), login rate limits (5 fails/IP/5 min -> 429), one-time code sign-in (6 digits,
-  keyed hash, 5 min, 5 tries, single use, 3 requests/member/15 min, same answer for unknown
-  members) via the outbox as `sensitive` + `expires_at` rows (never claimed/retried past
-  expiry, text -> "[code removed]", errors scrubbed); demo token only in mock mode; MCP bearer
-  `MCP_SHARED_SECRET` (FastMCP TokenVerifier; start.py makes one per run); dev/aws startup
-  check lists every problem; security headers + CSP, /docs only in mock; alert reasons carry
-  the reading time ("BP 198/127 at 2:14 PM, 24 Nov").
-- [ ] **H3 types, CI, Docker** (`hardening-h3-ci`)
+- [x] **H1 safety bugs** (tag `hardening-h1-done`): outbox claim/lease + retries (red alert
+  messages forever, others stop at 8; failures -> audit `delivery_failed`), inbound dedup
+  (`inbound_seen`), webhooks ack then process, per-member FIFO turns. Known gap: crash between
+  ack and processing loses that message (durable inbox = future); parent-facing proactive
+  messages (reminders, follow-ups) are sent directly, not retried.
+- [x] **H2 security** (tag `hardening-h2-done`): signed sessions (12 h, logout = all devices),
+  login rate limits, one-time code sign-in via the outbox (`sensitive` + `expires_at`), demo
+  token mock-only, MCP bearer `MCP_SHARED_SECRET`, dev/aws startup check, headers + CSP,
+  reading time in alert reasons. Details: README "Security".
+- [x] **H3 types, CI, Docker** (`hardening-h3-ci`, tag `hardening-h3-done`): simulator router
+  (+ low-stock demo button) mounted only in mock (404 in dev/aws, `/` -> dashboard; startup
+  warns on CHANNEL=simulator outside mock); mypy (config in pyproject, 0 errors, no ignores);
+  `.github/workflows/ci.yml` (backend 3.11+3.13: ruff, format, mypy, pytest; dashboard: npm ci,
+  lint, build; audit job allowed to fail); Dockerfile (node:22-slim -> python:3.13-slim + uv,
+  non-root uid 10001, HEALTHCHECK) + docker-compose.yml (init/mcp/api, volume `khayal-data`,
+  api on 127.0.0.1:8000, mcp not published, `MCP_HOST=0.0.0.0` there only); `/health` =
+  ok / degraded (MCP down, 200) / error (DB, 503); README Docker + production-readiness table.
 
 ## Phase checklist
 - [x] Phase 0 — setup · [x] Phase 1 — MCP core + storage · [x] Phase 2 — reader + read-back
@@ -44,9 +42,11 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 - **Indian English on ElevenLabs:** no premade voice is Indian (all US/UK/AU); library voices
   (e.g. Muskaan, Hindi) get HTTP 402 `paid_plan_required` on the free plan (checked 23 Nov).
   Either `VOICE=mock` locally (browser en-IN voice) or a paid plan + an Indian voice id.
-- **Rename the GitHub repo** `care-circle` -> `khayal` (Settings -> General); docs already use
-  the new URL. Locally: in `.env` set `DATABASE_URL=sqlite:///./khayal.db` and rename
+- Local only: in `.env` set `DATABASE_URL=sqlite:///./khayal.db` and rename
   `backend/care_circle.db` (+ `-wal`/`-shm`) to `khayal.db*` with servers stopped, or reseed.
+  (GitHub repo rename to `Khayal` is done.)
+- Docker uses your `.env` if present: it has `LLM_PROVIDER=groq` + keys, so `docker compose up`
+  would read photos with Groq. For a keyless run: `KHAYAL_ENV_FILE=.env.example docker compose up`.
 - **Real photos** of Indian home devices for a real accuracy number: none yet. Public sets were
   unusable (Oxford zip gone/no licence; Roboflow needs an account key + digit-box labels only).
   Optional: a free Roboflow API key would allow a public-photo run.
@@ -64,7 +64,7 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 
 ## How to run (current)
 - Once: `cd dashboard && npm ci && npm run build` (Node 20.19+/22.12+). Backend: `cd backend && uv sync && uv run
-  python -m pytest` (439 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
+  python -m pytest` (449 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
   Local venv was moved from ~/Downloads/care-circle, so `.venv/bin/pytest` has a stale shebang:
   use `python -m pytest` (or `uv sync --reinstall` to fix the scripts).
 - **Demo: `uv run python ../scripts/start.py --seed`** -> http://localhost:8000/simulator and
@@ -87,15 +87,18 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
   `_meta` = `ctx.request_context.meta`; audit + clock sync in `Middleware.on_call_tool`.
 - Dashboard: Vite 8 (`base: '/dashboard/'`), React 19, TS 7, Recharts 3, oxlint (no refs/Date.now
   in render). Chart colours validated: blue `#2a78d6` + aqua `#1baf7a`; lines `linear`.
-- ElevenLabs (docs checked 23 Nov 2026): TTS `POST /v1/text-to-speech/{voice_id}?output_format=
-  mp3_44100_64`, header `xi-api-key`, body `{text, model_id, language_code}`; `eleven_v4_turbo`
-  lists hi + ta; `eleven_flash_v2_5` cheaper (Tamil unconfirmed); `eleven_turbo_v2_5` deprecated.
-  STT `POST /v1/speech-to-text` multipart `file` + `model_id=scribe_v3` -> `text` (scribe_v1
-  deprecated). Free plan ~10k credits/month; TTS ~1 credit/char. Live 23 Nov: free plan gets
-  HTTP 402 `paid_plan_required` for Shared Library voices via API (premade only); TTS
-  `language_code` takes `hi`/`en`; Scribe reply `language_code` is ISO 639-3 (`hin`, `eng`) and
-  accepts `hi` or `hin` as a hint (we send none: auto-detect). Sarah/Alice/Brian all round-trip
-  Hindi exactly.
+- ElevenLabs (checked 23 Nov): TTS `POST /v1/text-to-speech/{voice_id}?output_format=mp3_44100_64`
+  (`xi-api-key`; body text, model_id `eleven_v4_turbo`, language_code hi/en); STT
+  `POST /v1/speech-to-text` (`scribe_v3`, reply language ISO 639-3, we send no hint). Free plan:
+  premade voices only (Library voices -> 402), ~1 credit/char.
+- Docker (29.7, Compose v5.3): Compose `env_file` keeps the inline comment of an EMPTY value
+  (`X=   # note` -> "# note"); non-empty values are fine. docker/entrypoint.sh blanks values
+  starting with `#`. Build: `docker compose build` (3 services share one image `khayal:local`).
+  Desktop may need starting: `open -a Docker`. Test runs: `KHAYAL_ENV_FILE=<file>`,
+  `KHAYAL_PORT=8010`, `-p khayal-devtest`.
+- CI actions (checked 24 Nov): checkout@v7, setup-node@v7, **setup-uv has no moving major tag**
+  -> `astral-sh/setup-uv@v10.4.0`. mypy 2.4.1. FastAPI 0.165 includes routers lazily
+  (`app.routes` shows `_IncludedRouter`), so test routes by requests, not introspection.
 - Tests: `tests/conftest.py` forces mock providers and blocks non-localhost sockets; `live`
   marker skipped unless RUN_LIVE_TESTS=1 (env or .env). Scheduler tests pin the shared clock with
   `clock.set_shared(store, offset)` (the MCP middleware re-syncs from the store each call).
@@ -135,6 +138,11 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
   Outbox needs no member turn (atomic claim). Alerts are stored before their outbox rows
   (rows carry `alert_id` + `level`). Twilio `send` is synchronous (slot booked under a lock,
   sleep + HTTP outside it); queue/`drain()` removed.
+- 2026-11-24 (H3): simulator + low-stock demo = mock only (404, not 403, elsewhere); dev with
+  CHANNEL=simulator is a startup warning, not an error. Docker: one-shot `init` service writes
+  mock secrets to `/data/mock-secrets.env` (O_EXCL) and seeds on first start; in dev/aws it
+  runs the startup check and exits 1, so api/mcp never start. api published on 127.0.0.1 only.
+  `ruff format --check` added to CI (codebase already conformed).
 - 2026-11-24 (H2): logout = per-member session version in kv (ends all devices). Session times
   use the real clock (demo clock jumps must not sign out); code + outbox expiry use the app
   (demo) clock. Code request takes `member_id` (user spec); mock + default token lists the demo
@@ -143,8 +151,8 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
   Startup check also requires secrets >= 32 chars. Alert time format "2:14 PM, 24 Nov" (IST).
 
 ## Session log (newest first, one line each)
-- 2026-11-24: Hardening H2 — sessions, code sign-in, rate limits, MCP bearer, startup check,
-  headers/CSP, reading time in alerts; 30 new tests (409 -> 439); start.py demo run: both
-  sign-ins, MCP 401 without/wrong bearer, red alert over authenticated MCP, Chrome: no CSP errors.
-- 2026-11-24: Hardening H1 (outbox retries, inbound dedup, per-member turns; 409 tests).
+- 2026-11-24: Hardening H3 — simulator mock-only, mypy 13 -> 0, CI green (3.11/3.13, dashboard,
+  audit), Docker image + compose checked locally (mock golden path, red alert via mcp container
+  on the dashboard, MCP down = degraded, dev refuses empty/short secrets); 439 -> 449 tests.
+- 2026-11-24: Hardening H1 (409 tests) and H2 (439 tests, demo run incl. MCP 401 checks).
 - 2026-11-22/23: Phases 0-6 + chores done (387 tests at phase 6, 393 after chores).

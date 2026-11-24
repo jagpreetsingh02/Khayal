@@ -38,6 +38,7 @@ from app.alerts.notifier import Notifier, StoreNotifier
 from app.alerts.thresholds import (
     LEVEL_RANK,
     Evaluation,
+    alert_level,
     effective_thresholds,
     evaluate_missed_doses,
     local_today,
@@ -289,7 +290,8 @@ def create_server(
 
         if evaluation.level == "none" and evaluation.ask_repeat:
             raise ToolError(f"Not sent: {evaluation.reason}")
-        if evaluation.level == "none":
+        stored_level = alert_level(evaluation.level)
+        if stored_level is None:
             raise ToolError("No limit set by the doctor was crossed; alert not sent.")
         if LEVEL_RANK[level] > LEVEL_RANK[evaluation.level]:
             raise ToolError(
@@ -336,7 +338,7 @@ def create_server(
         alert = s.add_alert(
             Alert(
                 parent_id=parent.id,
-                level=final.level,
+                level=stored_level,
                 reason=final.reason,
                 reading_id=reading_id,
                 notified_member_ids=[m.id for m in family],
@@ -428,8 +430,9 @@ mcp = create_server()
 
 
 def main() -> None:
-    """Run the server on MCP_SERVER_URL (default http://localhost:8001/mcp), localhost only.
-    Refuses to start without MCP_SHARED_SECRET (scripts/start.py makes one per run)."""
+    """Run the server on MCP_HOST (default 127.0.0.1) and the port/path of MCP_SERVER_URL
+    (default http://localhost:8001/mcp). Refuses to start without MCP_SHARED_SECRET
+    (scripts/start.py makes one per run)."""
     from app.startup_checks import enforce
 
     settings = get_settings()
@@ -440,7 +443,9 @@ def main() -> None:
             "or start everything with scripts/start.py, which makes one per run."
         )
     url = urlparse(settings.mcp_server_url)
-    mcp.run(transport="http", host="127.0.0.1", port=url.port or 8001, path=url.path or "/mcp")
+    mcp.run(
+        transport="http", host=settings.mcp_host, port=url.port or 8001, path=url.path or "/mcp"
+    )
 
 
 if __name__ == "__main__":

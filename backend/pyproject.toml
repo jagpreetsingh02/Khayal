@@ -19,6 +19,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.28",
+    "mypy>=2.4.1",
     "pytest>=9.2",
     "ruff>=0.17",
 ]
@@ -33,6 +34,15 @@ addopts = "-q"
 markers = [
   "live: calls a real external API; skipped unless RUN_LIVE_TESTS=1 (uses your quota)",
 ]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["app", "mcp_server"]
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# No third-party module needed ignore_missing_imports so far; add per-module overrides
+# ([[tool.mypy.overrides]] module = "x.*") only when a library ships no types.
 
 [tool.ruff]
 line-length = 100

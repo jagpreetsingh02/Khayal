@@ -383,6 +383,76 @@ def test_docs_only_in_mock_mode(app, dev_app):
         assert dev_app.c.get(path).status_code == 404, path
 
 
+# ---------- the web simulator is mock-only ----------
+
+SIMULATOR_GETS = ("/simulator", "/simulator/api/state", "/simulator/api/mcp",
+                  "/simulator/samples", "/simulator/voice-samples")  # fmt: skip
+SIMULATOR_POSTS = {
+    "/simulator/api/send": {"sender_ref": PARENT_REF, "text": "hi"},
+    "/simulator/api/skip": {"minutes": 5},
+    "/simulator/api/advance": {"minutes": 30},
+    "/simulator/api/weekly-summary": {},
+    "/simulator/api/reset": {},
+}
+
+
+def test_simulator_does_not_exist_in_dev_mode(dev_app):
+    before = dev_app.store.list_readings(dev_app.parent.id)
+    for path in SIMULATOR_GETS:
+        assert dev_app.c.get(path).status_code == 404, path
+    for path, body in SIMULATOR_POSTS.items():
+        assert dev_app.c.post(path, json=body).status_code == 404, path
+    # nothing was reset, reseeded or sent as the parent
+    assert dev_app.store.list_readings(dev_app.parent.id) == before
+    assert dev_app.svc.simulator.feed(PARENT_REF) == []
+    root = dev_app.c.get("/", follow_redirects=False)
+    assert root.headers["location"] == "/dashboard/"
+
+
+def test_dashboard_and_webhooks_unaffected_in_dev_mode(app, dev_app):
+    assert dev_app.c.get("/dashboard/").status_code == app.c.get("/dashboard/").status_code
+    assert dev_app.c.get("/health").status_code == 200
+    assert dev_app.c.get("/api/login/hint").status_code == 200
+    # The webhook handlers still run (their own answers, not the router's "Not Found").
+    # This test app has only the simulator channel and Telegram polling mode.
+    twilio = dev_app.c.post("/webhooks/twilio", content=b"Body=hi")
+    assert "twilio channel is not enabled" in twilio.json()["detail"]
+    telegram = dev_app.c.post("/webhooks/telegram", json={})
+    assert telegram.json()["detail"] == "Telegram webhook mode is off"
+    assert dev_app.c.get("/simulator").json()["detail"] == "Not Found"
+
+
+def test_simulator_works_in_mock_mode(app):
+    for path in SIMULATOR_GETS:
+        assert app.c.get(path).status_code == 200, path
+    assert app.c.get("/", follow_redirects=False).headers["location"] == "/simulator"
+    sent = app.c.post("/simulator/api/send", json=SIMULATOR_POSTS["/simulator/api/send"])
+    assert sent.status_code == 200, sent.text
+    assert app.c.post("/simulator/api/skip", json={"minutes": 5}).status_code == 200
+    assert app.c.post("/simulator/api/reset").status_code == 200
+
+
+def test_low_stock_demo_button_is_mock_only(dev_app):
+    dev_app.request_code(dev_app.ravi.id)
+    session = dev_app.verify(dev_app.ravi.id, dev_app.last_code(dev_app.ravi)).json()["session"]
+    med = dev_app.store.list_medicines(dev_app.parent.id)[0]
+    r = dev_app.c.post(
+        f"/api/parents/{dev_app.parent.id}/demo/low-stock",
+        json={"medicine_id": med.id},
+        headers=bearer(session),
+    )
+    assert r.status_code == 404
+    assert dev_app.store.get_medicine(med.id).stock_count == med.stock_count
+
+
+def test_dev_mode_with_simulator_channel_warns():
+    long = "x" * 40
+    s = Settings(_env_file=None, app_mode="dev", channel="simulator",
+                 session_secret=long, mcp_shared_secret=long)  # fmt: skip
+    errors, warnings = config_problems(s)
+    assert errors == [] and any("CHANNEL=simulator" in w for w in warnings)
+
+
 # ---------- MCP server auth ----------
 
 MCP_SECRET = "mcp-test-secret-" + "m" * 24
@@ -434,6 +504,23 @@ def test_mcp_server_main_refuses_without_a_secret(monkeypatch):
     get_settings.cache_clear()
     with pytest.raises(SystemExit, match="MCP_SHARED_SECRET is empty"):
         mcp_module.main()
+
+
+def test_mcp_server_binds_localhost_unless_mcp_host_is_set(monkeypatch):
+    from mcp_server import server as mcp_module
+
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_module.mcp, "run", lambda **kw: calls.append(kw))
+    monkeypatch.setenv("MCP_SHARED_SECRET", MCP_SECRET)
+    monkeypatch.delenv("MCP_HOST", raising=False)
+    get_settings.cache_clear()
+    mcp_module.main()
+    monkeypatch.setenv("MCP_HOST", "0.0.0.0")  # what docker-compose sets for the mcp service
+    get_settings.cache_clear()
+    mcp_module.main()
+    get_settings.cache_clear()
+    assert [c["host"] for c in calls] == ["127.0.0.1", "0.0.0.0"]
+    assert calls[0]["port"] == 8001 and calls[0]["path"] == "/mcp"
 
 
 # ---------- startup config check ----------

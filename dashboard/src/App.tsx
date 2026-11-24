@@ -167,7 +167,7 @@ function Shell({ onSignOut }: { onSignOut: () => void }) {
           ))}
         {tab === 'medicines' &&
           (s.visible_to_me.medicines ? (
-            <MedicinesPage parentId={parent.id} demo={me.data.app_mode !== 'aws'} />
+            <MedicinesPage parentId={parent.id} demo={me.data.app_mode === 'mock'} />
           ) : (
             <NotShared parent={parent.name} category="medicines" />
           ))}

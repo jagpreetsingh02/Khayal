@@ -11,10 +11,20 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from app.storage.models import DoseEvent, Reading, Threshold
+from app.storage.models import AlertLevel, DoseEvent, Reading, Threshold
 
 Level = Literal["none", "amber", "red"]
 LEVEL_RANK = {"none": 0, "amber": 1, "red": 2}
+
+
+def alert_level(level: Level) -> AlertLevel | None:
+    """The level an Alert row stores, or None when no limit was crossed."""
+    if level == "red":
+        return "red"
+    if level == "amber":
+        return "amber"
+    return None
+
 
 DEFAULT_THRESHOLDS: dict[str, float] = {
     "glucose_red_below": 54,  # ADA level 2

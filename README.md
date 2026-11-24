@@ -1,5 +1,7 @@
 # Khayal
 
+[![CI](https://github.com/jagpreetsingh02/Khayal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jagpreetsingh02/Khayal/actions/workflows/ci.yml)
+
 **A WhatsApp photo of any ordinary glucometer or BP monitor becomes a confirmed, logged reading
 and a family that knows. No new app, no new device.**
 
@@ -54,6 +56,27 @@ Everything is on one port; **Ctrl+C** stops it.
 The full click-by-click video script is in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md). Checked
 on a fresh clone in an empty folder on macOS (23 Nov 2026); the Windows commands are the same
 steps but have not been run on Windows.
+
+### Run with Docker
+
+Same demo, nothing to install but Docker (no keys, nothing paid):
+
+```bash
+git clone https://github.com/jagpreetsingh02/khayal.git && cd khayal
+docker compose up --build -d   # first build takes a few minutes
+open http://localhost:8000/simulator   # macOS; elsewhere paste it in a browser. /dashboard/ too
+```
+
+`docker compose logs -f` shows the logs; `docker compose down` stops it (`down -v` also wipes
+the demo data).
+
+Two containers from one image: `api` (port 8000, this machine only) and `mcp` (the MCP
+server, reachable only from the `api` container). A one-shot `init` step seeds the demo on
+first start and, in mock mode, makes random `SESSION_SECRET` / `MCP_SHARED_SECRET` that both
+services share through the `khayal-data` volume. `.env` is optional and read if present
+(`KHAYAL_ENV_FILE=other.env` picks another file). With `APP_MODE=dev` or `aws`, nothing starts
+until both secrets are set to 32+ characters.
+(Docker: checked on macOS with Docker Desktop, 24 Nov 2026.)
 
 ---
 
@@ -228,6 +251,7 @@ running (dev-only; uses your installed Chrome).
 uv run pytest                                      # backend tests + dashboard build/lint check
 RUN_LIVE_TESTS=1 uv run pytest -m live             # opt-in: real API tests (spends your quota)
 uv run ruff check . && uv run ruff format --check .
+uv run mypy                                        # types (app/, mcp_server/)
 uv run python ../scripts/start.py                  # keep the current database
 uv run python ../scripts/seed_demo.py              # reseed (stop the servers first)
 uv run python ../scripts/mcp_client_demo.py        # list MCP tools, call log_reading (needs MCP_SHARED_SECRET; see the script)
@@ -244,6 +268,11 @@ npm run lint
 **Tests make zero real API calls by default.** `tests/conftest.py` forces mock providers
 (whatever your `.env` says) and blocks any non-localhost network connection. Tests that call
 real APIs are marked `live` and run only with `RUN_LIVE_TESTS=1`.
+
+**CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push and pull
+request: ruff, ruff format, mypy and pytest on Python 3.11 and 3.13 (`uv sync --locked`), the
+dashboard's `npm ci`, lint and build on Node 22, and an informational `pip-audit` +
+`npm audit --omit=dev` job that is allowed to fail.
 
 Dashboard API (all routes need a signed session from `POST /api/login` (mock only) or
 `POST /api/login/code/request` + `/api/login/code/verify`; `POST /api/logout` ends it): `GET /api/parents/{id}/readings?range=14d`,
@@ -386,12 +415,18 @@ What is protected today:
   forever. Their text becomes `[code removed]` once delivered or expired, and errors from the
   channel are scrubbed before they reach logs or `delivery_failed`.
 - **MCP server:** every request needs `Authorization: Bearer <MCP_SHARED_SECRET>` (FastMCP
-  token verifier, constant-time compare), and the server binds to localhost. That is why the
-  sender in `_meta` can be trusted: only our API holds the secret. `scripts/start.py` makes a
-  random secret per run when it is empty.
+  token verifier, constant-time compare), and the server binds to `MCP_HOST`, localhost by
+  default. That is why the sender in `_meta` can be trusted: only our API holds the secret.
+  `scripts/start.py` makes a random secret per run when it is empty. Under Docker Compose the
+  `mcp` container binds `0.0.0.0` so the `api` container can reach it; its port is never
+  published to the host, and the bearer secret is still required.
 - **Unsafe production config is refused.** With `APP_MODE=dev`/`aws`, the app stops with one
   message listing every problem: missing or short secrets, Twilio without `PUBLIC_BASE_URL` or
   `TWILIO_AUTH_TOKEN`, and a Telegram webhook without `TELEGRAM_WEBHOOK_SECRET`.
+- **The web simulator is mock-only.** `/simulator` and its API (send as a parent, reset, reseed,
+  demo clock, weekly summary now) and the dashboard's "Simulate low stock (demo)" button exist
+  only with `APP_MODE=mock`; in `dev` and `aws` they return 404 and `/` opens the dashboard.
+  The simulator has no sign-in, which is fine only for a local demo.
 - **Headers:** `X-Content-Type-Options`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`
   and a strict CSP on the dashboard and API (only our own scripts). `/docs` and `/openapi.json`
   are on only in mock mode.
@@ -400,9 +435,6 @@ What is protected today:
 
 Still demo-grade (not ready for real patients yet):
 
-- **The web simulator has no sign-in.** It can send messages as the demo parent and read the
-  audit log. Reset and the demo clock are off in `aws` mode, but the simulator should be off
-  entirely outside mock mode before a real deployment.
 - **Rate limits live in memory** in one API process. They reset on restart, and several
   processes behind a load balancer would each count separately.
 - **Members sign in with a member ID** (in mock mode with the default token, they pick a name).
@@ -412,6 +444,22 @@ Still demo-grade (not ready for real patients yet):
 - **No TLS in the app.** HTTPS belongs to the proxy or load balancer in front of it. The demo
   runs on plain HTTP on localhost.
 - **Not externally tested:** no penetration test or security review has been done.
+
+## Production readiness
+
+Where the hardening stands. Khayal is a working demo, not yet a service for real patients.
+
+| Area | Status |
+|---|---|
+| Delivery: outbox retries, red alerts retried until delivered, inbound dedup, per-parent order (H1) | Done |
+| Security: signed sessions, one-time codes, rate limits, MCP bearer auth, startup config check, CSP, simulator mock-only (H2, H3) | Done |
+| Types, CI (lint, format, mypy, tests on 3.11 + 3.13, dashboard build, dependency audit), Docker image + Compose, `/health` with DB and MCP checks (H3) | Done |
+| Storage for more than one host: Postgres or DynamoDB adapter (SQLite on a shared volume is for a demo on one machine) | Next |
+| Schema versioning and migrations (today: create-if-missing plus added columns) | Next |
+| Structured (JSON) logging with request ids | Next |
+| DPDP Act: a parent can export or delete all their data | Next |
+| Durable inbox (a crash between the webhook's answer and processing loses that message) | Next |
+| TLS, a managed secret store, external security review | Next (deployment) |
 
 ## Reliability
 
@@ -429,6 +477,10 @@ Still demo-grade (not ready for real patients yet):
   anyone else.
 - **Known gap:** a message is only in memory between the webhook's answer and the end of
   processing; a crash in that window loses it. A durable inbox is future work.
+- **Docker:** the `api` and `mcp` containers share one SQLite file (WAL mode) on a named volume.
+  That is fine for a demo on one machine; it is not a database for several hosts or replicas.
+  `/health` returns `ok`, `degraded` when the MCP server is down (still 200: the dashboard
+  works, readings cannot be logged) or `error` with 503 when the database does not answer.
 
 ## Roadmap
 
