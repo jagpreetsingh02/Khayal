@@ -430,8 +430,9 @@ mcp = create_server()
 
 
 def main() -> None:
-    """Run the server on MCP_SERVER_URL (default http://localhost:8001/mcp), localhost only.
-    Refuses to start without MCP_SHARED_SECRET (scripts/start.py makes one per run)."""
+    """Run the server on MCP_HOST (default 127.0.0.1) and the port/path of MCP_SERVER_URL
+    (default http://localhost:8001/mcp). Refuses to start without MCP_SHARED_SECRET
+    (scripts/start.py makes one per run)."""
     from app.startup_checks import enforce
 
     settings = get_settings()
@@ -442,7 +443,9 @@ def main() -> None:
             "or start everything with scripts/start.py, which makes one per run."
         )
     url = urlparse(settings.mcp_server_url)
-    mcp.run(transport="http", host="127.0.0.1", port=url.port or 8001, path=url.path or "/mcp")
+    mcp.run(
+        transport="http", host=settings.mcp_host, port=url.port or 8001, path=url.path or "/mcp"
+    )
 
 
 if __name__ == "__main__":

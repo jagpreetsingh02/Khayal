@@ -186,6 +186,10 @@ class SQLiteStore(Store):
     def close(self) -> None:
         self._conn.close()
 
+    def ping(self) -> None:
+        with self._lock:
+            self._conn.execute("SELECT 1").fetchone()
+
     # --- generic helpers ---
     def _insert(self, table: str, model: M, *, upsert: bool = False) -> M:
         row = _to_row(model)

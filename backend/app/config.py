@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./khayal.db"
     mcp_server_url: str = "http://localhost:8001/mcp"
+    # Interface the MCP server binds to. Localhost by default; Docker Compose sets 0.0.0.0 for
+    # the mcp container only (its port is never published; the bearer secret is still required).
+    mcp_host: str = "127.0.0.1"
 
     groq_api_key: str = ""
     groq_vision_model: str = ""

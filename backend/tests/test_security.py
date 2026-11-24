@@ -506,6 +506,23 @@ def test_mcp_server_main_refuses_without_a_secret(monkeypatch):
         mcp_module.main()
 
 
+def test_mcp_server_binds_localhost_unless_mcp_host_is_set(monkeypatch):
+    from mcp_server import server as mcp_module
+
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_module.mcp, "run", lambda **kw: calls.append(kw))
+    monkeypatch.setenv("MCP_SHARED_SECRET", MCP_SECRET)
+    monkeypatch.delenv("MCP_HOST", raising=False)
+    get_settings.cache_clear()
+    mcp_module.main()
+    monkeypatch.setenv("MCP_HOST", "0.0.0.0")  # what docker-compose sets for the mcp service
+    get_settings.cache_clear()
+    mcp_module.main()
+    get_settings.cache_clear()
+    assert [c["host"] for c in calls] == ["127.0.0.1", "0.0.0.0"]
+    assert calls[0]["port"] == 8001 and calls[0]["path"] == "/mcp"
+
+
 # ---------- startup config check ----------
 
 

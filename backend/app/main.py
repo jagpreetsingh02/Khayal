@@ -9,7 +9,8 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+import httpx
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -76,6 +77,28 @@ def csp_for(path: str) -> str:
     if path.startswith(DOCS_PATHS):
         return CSP_DOCS
     return CSP_STRICT
+
+
+def _database_ok(svc: KhayalService) -> bool:
+    try:
+        svc.store.ping()
+    except Exception:
+        log.exception("health: database check failed")
+        return False
+    return True
+
+
+def _mcp_status(svc: KhayalService) -> str:
+    """reachable / unreachable (any HTTP answer counts: without the bearer it is a 401), or
+    in-process when the agent holds the server object (tests)."""
+    target = svc.agent.mcp
+    if not isinstance(target, str):
+        return "in-process"
+    try:
+        httpx.get(target, timeout=2)
+    except httpx.HTTPError:
+        return "unreachable"
+    return "reachable"
 
 
 def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_SECONDS):
@@ -163,9 +186,17 @@ def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_
             return HTMLResponse(NOT_BUILT, status_code=503)
 
     @app.get("/health")
-    def health() -> dict[str, str]:
-        settings = get_settings()
-        return {"status": "ok", "mode": settings.app_mode}
+    def health(request: Request, response: Response) -> dict[str, str]:
+        """ok: database and MCP server answer. degraded: the MCP server is down (the app still
+        serves the dashboard; readings cannot be logged). error (503): no database."""
+        svc: KhayalService | None = getattr(request.app.state, "service", None)
+        database = "ok" if svc is not None and _database_ok(svc) else "error"
+        mcp = _mcp_status(svc) if svc is not None else "unknown"
+        status = "ok" if mcp in ("reachable", "in-process") else "degraded"
+        if database != "ok":
+            status, response.status_code = "error", 503
+        return {"status": status, "mode": get_settings().app_mode, "database": database,
+                "mcp": mcp}  # fmt: skip
 
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
