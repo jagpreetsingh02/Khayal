@@ -12,6 +12,7 @@ from app.storage.models import (
     DoseEvent,
     DoseStatus,
     Family,
+    LoginCode,
     Medicine,
     Member,
     OutboxMessage,
@@ -240,11 +241,34 @@ class Store(ABC):
         """The send failed: retry at `next_attempt_at`, or give up when it is None."""
 
     @abstractmethod
+    def expire_outbox(self, now: datetime, *, member_id: str | None = None) -> list[OutboxMessage]:
+        """Give up on undelivered messages whose `expires_at` has passed (or, with `member_id`,
+        on all of that member's undelivered sensitive messages), blanking sensitive text.
+        Rows being sent right now (lease held) are left alone. Returns the rows expired."""
+
+    @abstractmethod
     def get_outbox(self, message_id: str) -> OutboxMessage: ...
 
     @abstractmethod
     def list_outbox(self, *, alert_id: str | None = None) -> list[OutboxMessage]:
         """Oldest first; optionally only the messages of one alert."""
+
+    # --- dashboard sign-in codes (only hashes are stored) ---
+    @abstractmethod
+    def add_login_code(self, code: LoginCode) -> LoginCode:
+        """Store a new code and revoke the member's older unused ones (same transaction)."""
+
+    @abstractmethod
+    def active_login_code(self, member_id: str, now: datetime) -> LoginCode | None:
+        """The member's newest code that is unused, not revoked and not expired."""
+
+    @abstractmethod
+    def count_login_try(self, code_id: str, max_tries: int) -> int | None:
+        """Atomically count one verify attempt; None when the code is used up or out of tries."""
+
+    @abstractmethod
+    def use_login_code(self, code_id: str, at: datetime) -> bool:
+        """Mark the code used; True only for the first caller (single use)."""
 
     # --- inbound dedup (webhook retries, poller restarts) ---
     @abstractmethod

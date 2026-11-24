@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import clock
+from app.api.auth import LoginLimits
 from app.api.simulator import router as simulator_router
 from app.channels.inbound import Inbound
 from app.channels.service import KhayalService, build_service
@@ -40,7 +41,50 @@ async def _ticker(service: KhayalService, every: float) -> None:
             log.exception("tick / scheduler failed")
 
 
+# Security headers on every response. The dashboard CSP allows only our own scripts, styles,
+# images and API calls (the Vite build has no inline scripts; React sets styles through the
+# DOM, which CSP does not block). The simulator is a plain page with inline JS/CSS and
+# browser speech, so it gets its own looser policy (it is a demo tool).
+BASE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+}
+CSP_STRICT = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "font-src 'self'; connect-src 'self'; media-src 'self'; object-src 'none'; "
+    "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+)
+CSP_SIMULATOR = (
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; "
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+)
+# FastAPI's /docs page loads Swagger UI from a CDN with an inline script (mock mode only).
+CSP_DOCS = (
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: https://fastapi.tiangolo.com; object-src 'none'; "
+    "frame-ancestors 'none'"
+)
+DOCS_PATHS = ("/docs", "/redoc", "/openapi.json")
+
+
+def csp_for(path: str) -> str:
+    if path == "/simulator" or path.startswith("/simulator/"):
+        return CSP_SIMULATOR
+    if path.startswith(DOCS_PATHS):
+        return CSP_DOCS
+    return CSP_STRICT
+
+
 def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_SECONDS):
+    settings = get_settings()
+    if service is None:  # the real app (tests pass their own service)
+        from app.startup_checks import enforce
+
+        enforce(settings, "api")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         svc = app.state.service = service or build_service()
@@ -60,16 +104,31 @@ def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_
                 await task
         await inbound.drain()  # acknowledged messages still being processed
 
-    app = FastAPI(title="Khayal", version="0.5.0", lifespan=lifespan)
+    # API docs (/docs, /redoc, /openapi.json) only in mock mode.
+    docs = settings.app_mode == "mock"
+    app = FastAPI(
+        title="Khayal",
+        version="0.5.0",
+        lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
+    app.state.login_limits = LoginLimits()
     app.include_router(simulator_router)
 
     @app.middleware("http")
-    async def demo_clock_header(request: Request, call_next):
+    async def headers(request: Request, call_next):
         response = await call_next(request)
         # The dashboard shows "5 min ago" against this, so it follows "advance time".
         from app.storage.models import utcnow
 
         response.headers["X-Demo-Now"] = utcnow().isoformat()
+        for name, value in BASE_HEADERS.items():
+            response.headers.setdefault(name, value)
+        response.headers.setdefault("Content-Security-Policy", csp_for(request.url.path))
+        if request.url.path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", "no-store")
         return response
 
     @app.get("/voice/{name}", include_in_schema=False)

@@ -73,17 +73,22 @@ def run_sync(make_coro) -> Any:
 
 
 class RuleAgent:
-    def __init__(self, store: Store, mcp: str | FastMCP, timeout: float = 15) -> None:
+    def __init__(
+        self, store: Store, mcp: str | FastMCP, timeout: float = 15, secret: str = ""
+    ) -> None:
         self.store = store
         self.mcp = mcp  # MCP server URL (streamable HTTP); a FastMCP object only in tests
         self.timeout = timeout
+        self._secret = secret  # MCP_SHARED_SECRET, sent as "Authorization: Bearer ..."
 
     @property
     def transport(self) -> str:
         return "streamable-http" if isinstance(self.mcp, str) else "in-process"
 
     def _client(self) -> Client:
-        return Client(self.mcp, timeout=self.timeout)
+        # Over HTTP the server requires the shared secret; in-process (tests) has no HTTP.
+        auth = self._secret if isinstance(self.mcp, str) and self._secret else None
+        return Client(self.mcp, timeout=self.timeout, auth=auth)
 
     def call_tool(self, parent: Member, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         if tool not in ALLOWED_TOOLS:

@@ -19,6 +19,9 @@ Reliability (see README "Reliability"):
   everything else stops after 8 attempts. Final failures and every red failure go to
   audit_log (tool=delivery_failed) and the ERROR log. The outbox needs no per-member turn:
   the claim is atomic, so two senders never send the same row.
+- Messages that carry a secret (dashboard sign-in codes, `sensitive=True`) expire with the
+  code: never claimed after `expires_at`, never retried past it, never retried forever. Their
+  text is blanked once delivered, expired or given up, and is kept out of logs and audit_log.
 - Direct replies to the parent's own message are sent at once, inside the parent's turn
   (so replies keep their order), and are not retried.
 """
@@ -259,10 +262,13 @@ class KhayalService:
     # --- family messages: the outbox ---
 
     def flush_outbox(self, now: datetime | None = None) -> list[Outgoing]:
-        """Send every due outbox message (family alerts, refill notices, summaries...).
-        Only messages a channel accepted are marked delivered; the rest are retried.
-        Returns the messages delivered by this call."""
+        """Send every due outbox message (family alerts, refill notices, summaries, sign-in
+        codes...). Only messages a channel accepted are marked delivered; the rest are
+        retried. Returns the messages delivered by this call."""
         sent: list[Outgoing] = []
+        for row in self.store.expire_outbox(now or utcnow()):
+            log.warning("outbox %s (%s) to %s expired undelivered", row.id, row.kind,
+                        row.member_id)  # fmt: skip
         for _ in range(100):  # bounded: failed rows are not due again in this call
             at = now or utcnow()
             rows = self.store.claim_outbox(at, OUTBOX_LEASE, limit=OUTBOX_BATCH)
@@ -274,7 +280,7 @@ class KhayalService:
                 except NotFoundError:
                     msg, result = None, Delivery(False, "member not found")
                 else:
-                    [result] = self.deliver([msg])
+                    [result] = self.deliver([msg], secret=row.text if row.sensitive else None)
                 if result.ok and msg is not None:
                     self.store.mark_outbox_delivered(row.id, at=at)
                     sent.append(msg)
@@ -283,8 +289,13 @@ class KhayalService:
         return sent
 
     def _delivery_failed(self, row: OutboxMessage, error: str, at: datetime) -> None:
-        final = not row.retries_forever and row.attempts >= MAX_ATTEMPTS
-        next_at = None if final else at + retry_delay(row.attempts)
+        next_at = at + retry_delay(row.attempts)
+        final = not row.retries_forever and (
+            row.attempts >= MAX_ATTEMPTS
+            or (row.expires_at is not None and next_at >= row.expires_at)  # never past expiry
+        )
+        if final:
+            next_at = None
         self.store.mark_outbox_failed(row.id, error, next_at, at=at)
         if not (final or row.level == "red"):
             log.warning(
@@ -388,17 +399,27 @@ class KhayalService:
             return f"{type(exc).__name__}: {exc}"[:300]
         return None
 
-    def deliver(self, messages: list[Outgoing]) -> list[Delivery]:
+    def deliver(self, messages: list[Outgoing], *, secret: str | None = None) -> list[Delivery]:
         """Send each message now; returns one result per message (in order). Failures are
-        logged here; outbox messages are retried by flush_outbox, direct replies are not."""
+        logged here; outbox messages are retried by flush_outbox, direct replies are not.
+        `secret`: text that must not reach logs or audit_log (scrubbed from errors)."""
         results = []
         for msg in messages:
             error = self._send_one(msg)
+            if error and secret is not None:
+                error = scrub_secret(error, secret)
             if error:
                 log.warning("sending %s on %s to %s failed: %s", msg.kind, msg.channel,
                             msg.to_ref, error)  # fmt: skip
             results.append(Delivery(ok=error is None, error=error))
         return results
+
+
+def scrub_secret(error: str, secret: str) -> str:
+    """A channel error may echo the message body: drop it and any 4+ digit run (a code)."""
+    if secret:
+        error = error.replace(secret, "[message]")
+    return re.sub(r"\d{4,}", "[digits]", error)
 
 
 def build_service(settings: Settings | None = None) -> KhayalService:
@@ -414,7 +435,7 @@ def build_service(settings: Settings | None = None) -> KhayalService:
         from app.channels.twilio_whatsapp import TwilioWhatsAppChannel
 
         channels.append(TwilioWhatsAppChannel.from_settings(settings))
-    agent = RuleAgent(store, settings.mcp_server_url)
+    agent = RuleAgent(store, settings.mcp_server_url, secret=settings.mcp_shared_secret)
     simulator = channels[0]
     return KhayalService(
         store,

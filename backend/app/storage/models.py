@@ -20,7 +20,7 @@ DoseStatus = Literal["pending", "taken", "missed"]
 SetBy = Literal["default", "doctor"]
 AlertLevel = Literal["amber", "red"]
 RefillStatus = Literal["pending_approval", "approved", "rejected", "sent_to_pharmacy", "fulfilled"]
-Actor = Literal["agent", "member", "system"]
+Actor = Literal["agent", "member", "system", "unknown"]  # unknown: unproven sign-in
 
 
 def utcnow() -> datetime:
@@ -164,6 +164,9 @@ class AuditEntry(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+REDACTED_TEXT = "[code removed]"
+
+
 class OutboxMessage(BaseModel):
     """A message for a member written by the MCP server (e.g. a family alert). The MCP server
     may run in another process, so the API picks these up from the store and delivers them
@@ -189,8 +192,26 @@ class OutboxMessage(BaseModel):
     next_attempt_at: datetime | None = None  # None: due now
     claimed_until: datetime | None = None  # lease of the process sending it right now
     gave_up_at: datetime | None = None  # final failure (never for red alert messages)
+    # Messages that carry a secret (a sign-in code): never sent after `expires_at`, and their
+    # text is replaced by REDACTED_TEXT once delivered, expired or given up.
+    expires_at: datetime | None = None
+    sensitive: bool = False
 
     @property
     def retries_forever(self) -> bool:
         """Red alert text messages keep retrying until delivered."""
         return self.level == "red" and self.kind == "message"
+
+
+class LoginCode(BaseModel):
+    """A one-time dashboard sign-in code. Only an HMAC of the code is stored (see
+    app/api/login_codes.py); a new code for the member revokes the older ones."""
+
+    id: str = Field(default_factory=lambda: new_id("lc"))
+    member_id: str
+    code_hash: str
+    created_at: datetime = Field(default_factory=utcnow)
+    expires_at: datetime
+    tries: int = 0  # verify attempts so far
+    used_at: datetime | None = None
+    revoked_at: datetime | None = None

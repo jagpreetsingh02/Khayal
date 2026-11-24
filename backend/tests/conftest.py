@@ -31,6 +31,9 @@ for name, value in {
     "VOICE": "none",
     "CALL_PROVIDER": "none",
     "STT_PROVIDER": "none",
+    # Secrets from your .env must not change test behaviour; tests pass their own.
+    "SESSION_SECRET": "",
+    "MCP_SHARED_SECRET": "",
 }.items():
     os.environ[name] = value
 

@@ -5,8 +5,10 @@ every MCP request in `_meta`. The LLM only produces tool arguments and cannot se
 The server maps (channel, sender address) to a member through the `members` table, so a
 parent can only ever act on their own data.
 
-Note: anyone who can reach the MCP port could claim a sender, so the server binds to
-localhost; a shared-secret header is planned for the AWS deployment.
+Why `_meta` can be trusted: the server only accepts HTTP requests that carry
+"Authorization: Bearer <MCP_SHARED_SECRET>" (mcp_server/auth.py), and the only holder of
+that secret is our API process. A caller without the secret is rejected (401) before any
+tool runs, so it cannot claim a sender. The server also binds to localhost only.
 """
 
 from typing import Any
