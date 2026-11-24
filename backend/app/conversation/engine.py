@@ -37,9 +37,11 @@ from app.reader.strips import match_strip
 from app.storage.base import Store
 from app.storage.models import (
     ConversationState,
+    DoseStatus,
     Medicine,
     Member,
     OutboxMessage,
+    ReadingSource,
     ReadingType,
     utcnow,
 )
@@ -211,7 +213,7 @@ class ConversationEngine:
 
     def _handle_parent(self, parent: Member, msg: Incoming, now: datetime) -> list[str]:
         t = parse.normalize_speech(msg.text) if msg.via_voice else parse.normalize(msg.text)
-        source = "voice" if msg.via_voice else "manual"
+        source: ReadingSource = "voice" if msg.via_voice else "manual"
         if parent.consent_status in ("pending", "revoked"):
             if msg.image is None and parse.is_yes(t):
                 self.store.set_consent(
@@ -285,7 +287,7 @@ class ConversationEngine:
         msg: Incoming,
         t: str,
         now: datetime,
-        source: str = "manual",
+        source: ReadingSource = "manual",
     ) -> list[str]:
         p = state.payload
         repeat = p.get("repeat")
@@ -341,7 +343,7 @@ class ConversationEngine:
             ]
             if not events:
                 return [tpl.NOTHING_TO_CONFIRM]
-            status = "missed" if parse.is_no(t) else "taken"
+            status: DoseStatus = "missed" if parse.is_no(t) else "taken"
             for e in events:
                 self.store.set_dose_status(e.id, status, at=now)
                 if status == "taken":
@@ -405,7 +407,7 @@ class ConversationEngine:
         repeat: dict | None,
         typed: parse.TypedReading,
         now: datetime,
-        source: str = "manual",
+        source: ReadingSource = "manual",
     ) -> list[str]:
         """A typed reading, or a spoken one (source="voice"): same read-back either way."""
         values = typed.model_dump(exclude={"type"})
@@ -423,7 +425,7 @@ class ConversationEngine:
         type: ReadingType,
         values: dict[str, Any],
         *,
-        source: str,
+        source: ReadingSource,
         now: datetime,
         shown: str | None = None,
     ) -> list[str]:
@@ -474,8 +476,8 @@ class ConversationEngine:
             self._save(parent, AWAITING_REPEAT, {}, repeat)
             return [tpl.REPEAT_ASK.format(value=value)]
 
-        repeat = None if p.get("is_repeat") else p.get("repeat")
-        self._rest(parent, repeat)
+        still_waiting = None if p.get("is_repeat") else p.get("repeat")
+        self._rest(parent, still_waiting)
         if outcome.alert_sent:
             family = "I have told your family."
         elif outcome.not_shared:

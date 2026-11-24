@@ -33,6 +33,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import partial
 from zoneinfo import ZoneInfo
 
 from app import clock
@@ -190,9 +191,7 @@ class KhayalService:
         """Timeouts (read-back expiry, no-repeat amber) and any undelivered family messages."""
         out: list[Outgoing] = []
         for member_id in self.engine.members_with_timeouts():
-            out += self._for_member(
-                member_id, wait, lambda m=member_id: self.engine.expire_stale(m)
-            )
+            out += self._for_member(member_id, wait, partial(self.engine.expire_stale, member_id))
         return out + self.flush_outbox()
 
     def skip_time(self, member_id: str, minutes: float) -> list[Outgoing]:
@@ -208,13 +207,12 @@ class KhayalService:
         for parent in self.store.list_parents():
             if parent.consent_status != "granted":
                 continue
-            out += self._for_member(
-                parent.id,
-                wait,
-                # re-read inside the turn: a STOP handled just before must win
-                lambda pid=parent.id: self.scheduler.run_parent(self.store.get_member(pid), now),
-            )
+            out += self._for_member(parent.id, wait, partial(self._scheduler_job, parent.id, now))
         return out + self.flush_outbox()
+
+    def _scheduler_job(self, parent_id: str, now: datetime) -> list[Outgoing]:
+        # re-read inside the turn: a STOP handled just before must win
+        return self.scheduler.run_parent(self.store.get_member(parent_id), now)
 
     def advance_time(self, minutes: float) -> list[Outgoing]:
         """Simulator demo: move the shared demo clock forward, running the timeouts and the
@@ -278,10 +276,10 @@ class KhayalService:
                 try:
                     msg = outbox_to_outgoing(row, self.store.get_member(row.member_id))
                 except NotFoundError:
-                    msg, result = None, Delivery(False, "member not found")
-                else:
-                    [result] = self.deliver([msg], secret=row.text if row.sensitive else None)
-                if result.ok and msg is not None:
+                    self._delivery_failed(row, "member not found", at)
+                    continue
+                [result] = self.deliver([msg], secret=row.text if row.sensitive else None)
+                if result.ok:
                     self.store.mark_outbox_delivered(row.id, at=at)
                     sent.append(msg)
                 else:
@@ -289,24 +287,22 @@ class KhayalService:
         return sent
 
     def _delivery_failed(self, row: OutboxMessage, error: str, at: datetime) -> None:
-        next_at = at + retry_delay(row.attempts)
+        retry_at = at + retry_delay(row.attempts)
         final = not row.retries_forever and (
             row.attempts >= MAX_ATTEMPTS
-            or (row.expires_at is not None and next_at >= row.expires_at)  # never past expiry
+            or (row.expires_at is not None and retry_at >= row.expires_at)  # never past expiry
         )
-        if final:
-            next_at = None
-        self.store.mark_outbox_failed(row.id, error, next_at, at=at)
+        self.store.mark_outbox_failed(row.id, error, None if final else retry_at, at=at)
         if not (final or row.level == "red"):
             log.warning(
                 "outbox %s to %s failed (attempt %d), retry at %s: %s",
-                row.id, row.member_id, row.attempts, next_at, error,
+                row.id, row.member_id, row.attempts, retry_at, error,
             )  # fmt: skip
             return
         log.error(
             "outbox %s (%s, level %s) to %s failed (attempt %d)%s: %s",
             row.id, row.kind, row.level, row.member_id, row.attempts,
-            " - giving up" if final else f", retry at {next_at.isoformat()}", error,
+            " - giving up" if final else f", retry at {retry_at.isoformat()}", error,
         )  # fmt: skip
         self.store.add_audit(
             AuditEntry(
@@ -326,7 +322,7 @@ class KhayalService:
                         "error": error,
                         "attempts": row.attempts,
                         "gave_up": final,
-                        "next_attempt_at": next_at.isoformat() if next_at else None,
+                        "next_attempt_at": None if final else retry_at.isoformat(),
                     }
                 ),
                 parent_id=self._parent_of(row),

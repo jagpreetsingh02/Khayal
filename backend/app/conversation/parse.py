@@ -8,6 +8,8 @@ import re
 
 from pydantic import BaseModel
 
+from app.storage.models import ReadingType
+
 YES = {"1", "yes", "y", "haan", "haa", "ha", "han", "ji", "ji haan", "ok", "okay", "correct"}
 NO = {"2", "no", "n", "nahi", "nahin", "na", "galat", "wrong"}
 STOP = {"stop", "pause", "ruko", "band karo"}
@@ -27,7 +29,7 @@ _TIME = re.compile(r"^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|baje)?$")
 
 
 class TypedReading(BaseModel):
-    type: str  # "bp" | "glucose"
+    type: ReadingType
     systolic: int | None = None
     diastolic: int | None = None
     pulse: int | None = None

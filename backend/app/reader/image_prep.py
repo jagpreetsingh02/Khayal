@@ -16,8 +16,7 @@ JPEG_QUALITY = 85
 def prepare_image(data: bytes, max_side: int = MAX_SIDE, quality: int = JPEG_QUALITY) -> bytes:
     """Return JPEG bytes with the longest side at most `max_side` px, upright (EXIF)."""
     try:
-        img = Image.open(io.BytesIO(data))
-        img = ImageOps.exif_transpose(img)
+        img: Image.Image = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))
     except (UnidentifiedImageError, OSError) as exc:
         raise ReaderError("The file is not a readable image.") from exc
     if img.mode not in ("RGB", "L"):

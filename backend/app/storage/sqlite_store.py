@@ -3,6 +3,7 @@
 import json
 import sqlite3
 import threading
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 
@@ -572,7 +573,8 @@ class SQLiteStore(Store):
         return self._one(OutboxMessage, "outbox", "id", message_id)
 
     def list_outbox(self, *, alert_id: str | None = None) -> list[OutboxMessage]:
-        sql, params = "SELECT * FROM outbox", ()
+        sql = "SELECT * FROM outbox"
+        params: tuple[str, ...] = ()
         if alert_id is not None:
             sql, params = sql + " WHERE alert_id = ?", (alert_id,)
         return self._query(OutboxMessage, sql + " ORDER BY created_at, rowid", params)
@@ -650,7 +652,7 @@ class SQLiteStore(Store):
 
     # --- demo helpers ---
     def shift_parent_times(self, parent_id: str, delta: timedelta) -> None:
-        moved = [
+        moved: list[tuple[str, Sequence[Reading | Alert], tuple[str, ...]]] = [
             ("readings", self.list_readings(parent_id), ("created_at", "confirmed_at")),
             ("alerts", self.list_alerts(parent_id), ("created_at",)),
         ]

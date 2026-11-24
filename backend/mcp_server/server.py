@@ -38,6 +38,7 @@ from app.alerts.notifier import Notifier, StoreNotifier
 from app.alerts.thresholds import (
     LEVEL_RANK,
     Evaluation,
+    alert_level,
     effective_thresholds,
     evaluate_missed_doses,
     local_today,
@@ -289,7 +290,8 @@ def create_server(
 
         if evaluation.level == "none" and evaluation.ask_repeat:
             raise ToolError(f"Not sent: {evaluation.reason}")
-        if evaluation.level == "none":
+        stored_level = alert_level(evaluation.level)
+        if stored_level is None:
             raise ToolError("No limit set by the doctor was crossed; alert not sent.")
         if LEVEL_RANK[level] > LEVEL_RANK[evaluation.level]:
             raise ToolError(
@@ -336,7 +338,7 @@ def create_server(
         alert = s.add_alert(
             Alert(
                 parent_id=parent.id,
-                level=final.level,
+                level=stored_level,
                 reason=final.reason,
                 reading_id=reading_id,
                 notified_member_ids=[m.id for m in family],
