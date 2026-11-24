@@ -12,6 +12,7 @@ protection is removed. README "Threats we test for" maps them.
 
 import asyncio
 import json
+import re
 from datetime import timedelta
 
 import pytest
@@ -206,10 +207,11 @@ def test_every_read_tool_for_family_a_returns_nothing_of_family_b(two, tool, arg
         "Amlong",
         two.b_med.id,
         two.b_reading.id,
-        "171",
-        "177",
     ):
         assert secret not in seen, (tool, secret)
+    # B's values as whole numbers (ids and timestamps may contain the digits by chance)
+    for value in ("171", "101", "177"):
+        assert not re.search(rf"(?<![\w.:-]){value}(?![\w:])", seen), (tool, value)
 
 
 def test_family_b_ids_are_refused_to_family_a_write_tools(two):
