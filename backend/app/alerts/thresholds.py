@@ -37,6 +37,14 @@ BP_REPEAT_MAX = timedelta(hours=1)
 EMERGENCY_LINE = "If you feel unwell, call 108/112."
 
 
+def reading_time(ts: datetime, tz: str = "Asia/Kolkata") -> str:
+    """When a reading was taken, for family texts: "2:14 PM, 24 Nov" (local time). Alerts
+    may be delivered late (outbox retries), so the text must say when, not imply "now"."""
+    local = ts.astimezone(ZoneInfo(tz))
+    hour = local.hour % 12 or 12
+    return f"{hour}:{local.minute:02d} {'AM' if local.hour < 12 else 'PM'}, {local.day} {local:%b}"
+
+
 class Evaluation(BaseModel):
     level: Level = "none"
     rule: str | None = None
@@ -59,8 +67,8 @@ def is_known_rule(rule: str) -> bool:
     return rule in DEFAULT_THRESHOLDS
 
 
-def evaluate_glucose(mgdl: float, t: dict[str, float]) -> Evaluation:
-    v = f"Glucose {mgdl:g} mg/dL"
+def evaluate_glucose(mgdl: float, t: dict[str, float], at: datetime | None = None) -> Evaluation:
+    v = f"Glucose {mgdl:g} mg/dL" + (f" at {reading_time(at)}" if at else "")
     if mgdl < t["glucose_red_below"]:
         return Evaluation(
             level="red",
@@ -97,7 +105,7 @@ def is_over_limit_bp(r: Reading, t: dict[str, float]) -> bool:
 
 def evaluate_bp(reading: Reading, history: list[Reading], t: dict[str, float]) -> Evaluation:
     """`history` = the parent's confirmed BP readings (any order; this reading excluded)."""
-    v = f"BP {reading.systolic}/{reading.diastolic}"
+    v = f"BP {reading.systolic}/{reading.diastolic} at {reading_time(reading.created_at)}"
     severe = f"{t['bp_severe_systolic']:g}/{t['bp_severe_diastolic']:g}"
     if is_severe_bp(reading, t):
         earlier_severe = [
@@ -164,7 +172,7 @@ def evaluate_bp_no_repeat(
     if any(first.created_at < r.created_at <= deadline for r in later if r.id != first.id):
         return Evaluation()  # a repeat was taken; it is evaluated on its own
     severe = f"{t['bp_severe_systolic']:g}/{t['bp_severe_diastolic']:g}"
-    at = first.created_at.astimezone(ZoneInfo(tz)).strftime("%H:%M")
+    at = reading_time(first.created_at, tz)
     return Evaluation(
         level="amber",
         rule="bp_severe_no_repeat",
@@ -176,7 +184,7 @@ def evaluate_bp_no_repeat(
 
 def evaluate_reading(reading: Reading, history: list[Reading], t: dict[str, float]) -> Evaluation:
     if reading.type == "glucose" and reading.glucose_mgdl is not None:
-        return evaluate_glucose(reading.glucose_mgdl, t)
+        return evaluate_glucose(reading.glucose_mgdl, t, reading.created_at)
     if reading.type == "bp":
         bp_history = [h for h in history if h.type == "bp" and h.id != reading.id]
         return evaluate_bp(reading, bp_history, t)

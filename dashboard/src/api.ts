@@ -33,6 +33,15 @@ export interface Me {
   parents: { id: string; name: string; sharing: SharingInfo }[]
   app_mode: string
   timezone: string
+  session: { issued_at: string; expires_at: string }
+}
+
+export interface LoginHint {
+  mode: string
+  demo_login: boolean // demo token path (mock mode only)
+  code_login: boolean
+  default_token: boolean
+  demo_members: MemberRef[] // only with the public default token
 }
 
 export interface Reading {
@@ -122,7 +131,7 @@ export interface ThresholdRow {
 export interface AuditRow {
   id: string
   at: string
-  actor: 'agent' | 'member' | 'system'
+  actor: 'agent' | 'member' | 'system' | 'unknown'
   tool: string
   via: 'mcp' | 'dashboard'
   args: unknown
@@ -200,3 +209,14 @@ export const post = <T>(path: string, body?: unknown) =>
 
 export const put = <T>(path: string, body: unknown) =>
   api<T>(path, { method: 'PUT', body: JSON.stringify(body) })
+
+/** Ends this member's sessions on the server (best effort), then forgets the token. */
+export async function logout(): Promise<void> {
+  try {
+    if (getSession()) await post('/logout')
+  } catch {
+    // already signed out or offline: the token is dropped anyway
+  } finally {
+    setSession(null)
+  }
+}

@@ -12,11 +12,11 @@ Rules enforced here:
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
@@ -26,11 +26,23 @@ from app.alerts.thresholds import (
     effective_thresholds,
     validate_threshold_update,
 )
-from app.api.auth import current_member, demo_token_ok, sign_session
+from app.api.auth import (
+    check_login_allowed,
+    client_ip,
+    current_member,
+    demo_login_enabled,
+    demo_token_ok,
+    end_sessions,
+    limits,
+    new_session,
+    record_failed_login,
+    too_many,
+)
+from app.api.login_codes import find_member, issue_code, verify_code
 from app.channels.service import KhayalService
 from app.config import get_settings
 from app.conversation import templates as tpl
-from app.demo import ensure_demo_family
+from app.demo import PARENT_REF, ensure_demo_family
 from app.pharmacy import DEMO_LABEL, DemoPharmacy
 from app.storage import ConflictError, NotFoundError, Store
 from app.storage.models import (
@@ -82,6 +94,11 @@ def _svc(request: Request) -> KhayalService:
 
 def _store(request: Request) -> Store:
     return _svc(request).store
+
+
+def _unix_iso(seconds: int) -> str:
+    """Session times are real wall-clock unix seconds (not the demo clock)."""
+    return datetime.fromtimestamp(seconds, UTC).isoformat()
 
 
 def _iso(ts: datetime | None) -> str | None:
@@ -250,45 +267,173 @@ class TokenBody(BaseModel):
 
 
 class LoginBody(TokenBody):
-    member_id: str
+    member_id: str = Field(min_length=1, max_length=100)
+
+
+class CodeRequestBody(BaseModel):
+    member_id: str = Field(min_length=1, max_length=100)
+
+
+class CodeVerifyBody(CodeRequestBody):
+    code: str = Field(min_length=1, max_length=20)
+
+
+CODE_SENT = {
+    "ok": True,
+    "message": "If this member exists, a sign-in code is on its way to their chat. "
+    "It expires in 5 minutes.",
+}
+
+
+def _family_parent_id(store: Store, member: Member) -> str | None:
+    """Which parent's audit log a sign-in event belongs to (shown to that family)."""
+    if member.role == "parent":
+        return member.id
+    parents = store.list_members(member.family_id, role="parent")
+    return parents[0].id if len(parents) == 1 else None
+
+
+def _audit_login(
+    store: Store, tool: str, member: Member | None, member_id: str, method: str, ok: bool
+) -> None:
+    """Sign-in events in audit_log. Never codes or tokens; actor=unknown until proven."""
+    _audit(
+        store,
+        "member" if ok else "unknown",
+        tool,
+        _family_parent_id(store, member) if member else None,  # type: ignore[arg-type]
+        {"member_id": member_id[:100], "method": method},
+        {"ok": ok},
+    )
+
+
+def _signed_in(request: Request, member: Member, method: str) -> dict[str, Any]:
+    store = _store(request)
+    _audit_login(store, "dashboard:login", member, member.id, method, True)
+    return new_session(store, member)
 
 
 @public.get("/login/hint")
-def login_hint() -> dict[str, Any]:
-    """Tells the login page whether the unchanged demo default is in use (mock demo only)."""
+def login_hint(request: Request) -> dict[str, Any]:
+    """What the login page offers: code sign-in always; the demo token only in mock mode.
+    With the public default token (mock demo) it also lists the demo family, so the code
+    path can be tried by tapping a name: that token already shows the same list."""
     s = get_settings()
-    return {"default_token": s.dashboard_demo_token == "change-me" and s.app_mode == "mock"}
+    demo = demo_login_enabled()
+    default_token = demo and s.dashboard_demo_token == "change-me"
+    members: list[dict[str, str]] = []
+    parent = _store(request).find_member_by_channel("simulator", PARENT_REF)
+    if default_token and parent is not None:
+        members = _member_choices(_store(request), parent.family_id)
+    return {
+        "mode": s.app_mode,
+        "demo_login": demo,
+        "code_login": True,
+        "default_token": default_token,
+        "demo_members": members,
+    }
+
+
+def _member_choices(store: Store, family_id: str) -> list[dict[str, str]]:
+    order = {"child": 0, "parent": 1}
+    members = store.list_members(family_id)
+    return [
+        {"id": m.id, "name": m.name, "role": m.role}
+        for m in sorted(members, key=lambda m: (order[m.role], m.name))
+    ]
+
+
+def _demo_login_or_403() -> None:
+    if not demo_login_enabled():
+        raise HTTPException(403, "The demo login is off here. Sign in with a one-time code.")
 
 
 @public.post("/login/members")
 def login_members(body: TokenBody, request: Request) -> dict[str, Any]:
+    _demo_login_or_403()
+    check_login_allowed(request)
     if not demo_token_ok(body.token):
+        record_failed_login(request)
         raise HTTPException(401, "Wrong demo token.")
     store = _store(request)
     parent = ensure_demo_family(store)
-    members = store.list_members(parent.family_id)
-    order = {"child": 0, "parent": 1}
     return {
         "family": store.get_family(parent.family_id).name,
-        "members": [
-            {"id": m.id, "name": m.name, "role": m.role}
-            for m in sorted(members, key=lambda m: (order[m.role], m.name))
-        ],
+        "members": _member_choices(store, parent.family_id),
     }
 
 
 @public.post("/login")
 def login(body: LoginBody, request: Request) -> dict[str, Any]:
-    if not demo_token_ok(body.token):
+    _demo_login_or_403()
+    check_login_allowed(request)
+    store = _store(request)
+    member = find_member(store, body.member_id)
+    if not demo_token_ok(body.token) or member is None:
+        record_failed_login(request)
+        _audit_login(store, "dashboard:login_failed", member, body.member_id, "demo_token", False)
+        if member is None and demo_token_ok(body.token):
+            raise HTTPException(404, "No such family member.")
         raise HTTPException(401, "Wrong demo token.")
-    try:
-        member = _store(request).get_member(body.member_id)
-    except NotFoundError as exc:
-        raise HTTPException(404, "No such family member.") from exc
-    return {
-        "session": sign_session(member.id),
-        "member": {"id": member.id, "name": member.name, "role": member.role},
-    }
+    return _signed_in(request, member, "demo_token")
+
+
+@public.post("/login/code/request")
+def request_login_code(
+    body: CodeRequestBody, request: Request, background: BackgroundTasks
+) -> dict[str, Any]:
+    """Send a one-time code to the member's own chat. Same answer whether or not the member
+    exists (no member discovery); limited per member id and per IP."""
+    for limiter, key in (
+        (limits(request).code_ip, client_ip(request)),
+        (limits(request).code_member, body.member_id),
+    ):
+        wait = limiter.hit(key)
+        if wait is not None:
+            raise too_many(wait)
+    store = _store(request)
+    member = find_member(store, body.member_id)
+    if member is not None:
+        issue_code(store, member)
+        background.add_task(_svc(request).flush_outbox)  # send now, after the response
+    _audit(
+        store,
+        "unknown",
+        "dashboard:login_code_requested",
+        _family_parent_id(store, member) if member else None,  # type: ignore[arg-type]
+        {"member_id": body.member_id[:100]},
+        {"ok": True},
+    )
+    return CODE_SENT
+
+
+@public.post("/login/code/verify")
+def verify_login_code(body: CodeVerifyBody, request: Request) -> dict[str, Any]:
+    check_login_allowed(request)
+    store = _store(request)
+    member = verify_code(store, body.member_id, body.code.strip())
+    if member is None:
+        record_failed_login(request)
+        known = find_member(store, body.member_id)
+        _audit_login(store, "dashboard:login_failed", known, body.member_id, "code", False)
+        raise HTTPException(401, "Wrong or expired code. Ask for a new one if needed.")
+    return _signed_in(request, member, "code")
+
+
+@router.post("/logout")
+def logout(request: Request, me: Me) -> dict[str, Any]:
+    """Ends every session of this member (all devices); the client drops its token too."""
+    store = _store(request)
+    end_sessions(store, me.id)
+    _audit(
+        store,
+        "member",
+        "dashboard:logout",
+        _family_parent_id(store, me),  # type: ignore[arg-type]
+        {"member_id": me.id},
+        {"ok": True},
+    )
+    return {"ok": True}
 
 
 # --- signed-in routes ---
@@ -306,6 +451,10 @@ def get_me(request: Request, me: Me) -> dict[str, Any]:
         ],
         "app_mode": get_settings().app_mode,
         "timezone": "Asia/Kolkata",
+        "session": {
+            "issued_at": _unix_iso(request.state.session["iat"]),
+            "expires_at": _unix_iso(request.state.session["exp"]),
+        },
     }
 
 

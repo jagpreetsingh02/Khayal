@@ -47,6 +47,7 @@ from app.conversation.templates import RETAKE_TIPS, format_value, read_back
 from app.reader.intake import build_reading
 from app.storage import NotFoundError, Store, get_store
 from app.storage.models import Alert, AuditEntry, Member, Reading, Refill, utcnow
+from mcp_server.auth import SharedSecretVerifier
 from mcp_server.guardrails import AMBER_MAX_PER_DAY, REFILL_MAX_DAYS, blocked_terms
 from mcp_server.identity import resolve_parent, sender_from_context
 from mcp_server.summary import build_summary_text, filter_summary
@@ -120,9 +121,14 @@ def create_server(
     store: Store | None = None,
     notifier: Notifier | None = None,
     clock: Callable[[], datetime] = utcnow,
+    secret: str | None = None,
 ) -> FastMCP:
     """Build the MCP server. Defaults: store from settings; family messages go to the
-    store's outbox, from where the API delivers them."""
+    store's outbox, from where the API delivers them. `secret` (default MCP_SHARED_SECRET):
+    HTTP requests must send "Authorization: Bearer <secret>"; empty = no HTTP auth (only
+    for in-process tests: main() refuses to serve without a secret)."""
+    if secret is None:
+        secret = get_settings().mcp_shared_secret
 
     def db() -> Store:
         return store or get_store()
@@ -137,6 +143,7 @@ def create_server(
             "doctor-set limit is crossed, request refills for family approval. Never "
             "diagnose or give dosing advice."
         ),
+        auth=SharedSecretVerifier(secret) if secret else None,
     )
     mcp.add_middleware(AuditMiddleware(db))
 
@@ -421,8 +428,18 @@ mcp = create_server()
 
 
 def main() -> None:
-    """Run the server on MCP_SERVER_URL (default http://localhost:8001/mcp), localhost only."""
-    url = urlparse(get_settings().mcp_server_url)
+    """Run the server on MCP_SERVER_URL (default http://localhost:8001/mcp), localhost only.
+    Refuses to start without MCP_SHARED_SECRET (scripts/start.py makes one per run)."""
+    from app.startup_checks import enforce
+
+    settings = get_settings()
+    enforce(settings, "mcp")
+    if not settings.mcp_shared_secret:
+        raise SystemExit(
+            "MCP_SHARED_SECRET is empty: set it in .env (same value for the API), "
+            "or start everything with scripts/start.py, which makes one per run."
+        )
+    url = urlparse(settings.mcp_server_url)
     mcp.run(transport="http", host="127.0.0.1", port=url.port or 8001, path=url.path or "/mcp")
 
 

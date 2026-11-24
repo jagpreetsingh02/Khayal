@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 
-import { getSession, setSession } from './api'
+import { getSession, logout } from './api'
 import type { Me, Overview } from './api'
 import { AlertsPage } from './components/Alerts'
 import { AuditPage } from './components/AuditLog'
@@ -11,6 +11,7 @@ import { RefillsPage } from './components/Refills'
 import { SettingsPage } from './components/Settings'
 import { ErrorNote, NotShared, Skeleton } from './components/ui'
 import { usePoll } from './hooks'
+import { istWhen } from './time'
 
 // Charts (Recharts) load only when the Trends tab opens.
 const TrendsPage = lazy(() => import('./components/Trends').then((m) => ({ default: m.TrendsPage })))
@@ -178,7 +179,10 @@ function Shell({ onSignOut }: { onSignOut: () => void }) {
 
       <footer className="footer">
         <p>{INTENDED_USE}</p>
-        <p className="muted">All times in India Standard Time (IST). Updates every few seconds.</p>
+        <p className="muted">
+          All times in India Standard Time (IST). Updates every few seconds. Signed in until{' '}
+          {istWhen(me.data.session.expires_at)}.
+        </p>
       </footer>
 
       {toast && (
@@ -196,8 +200,7 @@ export default function App() {
   return (
     <Shell
       onSignOut={() => {
-        setSession(null)
-        setSignedIn(false)
+        void logout().finally(() => setSignedIn(false))
       }}
     />
   )

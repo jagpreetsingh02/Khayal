@@ -47,7 +47,7 @@ Everything is on one port; **Ctrl+C** stops it.
 | Simulator | **🖼️** → **bp high** → **1** | Asked to rest 5 minutes and measure again; the family is **not** alerted yet |
 | Simulator | **⏩ Skip 5 minutes** → **🖼️** → **bp high** → **1** | **RED alert** in Ravi's and Priya's phones, plus an **Incoming call** card |
 | Simulator (demo clock) | **⏰ Next reminder**, then **⏩ 30 min** without replying (repeat once if needed) | A medicine reminder with an Indian English voice note (▶), one follow-up, then an **AMBER** "2 medicine reminders were marked missed" alert to the children |
-| http://localhost:8000/dashboard/ → token `change-me` → **Continue** → **Ravi Gowda** | **Medicines** → **Simulate low stock (demo)** on Telma 40 | The AI calls `request_refill` over MCP; the children get "Refill request…" |
+| http://localhost:8000/dashboard/ → **Use the demo access token** → `change-me` → **Continue** → **Ravi Gowda** (or **Send me a code** → **Ravi Gowda**: the 6-digit code appears on Ravi's phone in the simulator) | **Medicines** → **Simulate low stock (demo)** on Telma 40 | The AI calls `request_refill` over MCP; the children get "Refill request…" |
 | Dashboard | **Overview** → **Approve** | Lakshmi's chat: "Refill approved for Telma 40 (30); your pharmacy will confirm." |
 | Dashboard | **What the AI did** | Every MCP tool call; **Approvals by the AI: 0**; `approve_refill: does not exist` |
 
@@ -230,7 +230,7 @@ RUN_LIVE_TESTS=1 uv run pytest -m live             # opt-in: real API tests (spe
 uv run ruff check . && uv run ruff format --check .
 uv run python ../scripts/start.py                  # keep the current database
 uv run python ../scripts/seed_demo.py              # reseed (stop the servers first)
-uv run python ../scripts/mcp_client_demo.py        # list MCP tools, call log_reading
+uv run python ../scripts/mcp_client_demo.py        # list MCP tools, call log_reading (needs MCP_SHARED_SECRET; see the script)
 uv run python ../scripts/chat_demo.py --demo       # the conversation in the terminal
 uv run python ../scripts/accuracy_test.py          # reader accuracy on samples/ (mock)
 uv run python ../scripts/accuracy_test.py --reader groq   # real photos: warns, estimates tokens, asks
@@ -245,11 +245,12 @@ npm run lint
 (whatever your `.env` says) and blocks any non-localhost network connection. Tests that call
 real APIs are marked `live` and run only with `RUN_LIVE_TESTS=1`.
 
-Dashboard API (all routes need the demo session): `GET /api/parents/{id}/readings?range=14d`,
+Dashboard API (all routes need a signed session from `POST /api/login` (mock only) or
+`POST /api/login/code/request` + `/api/login/code/verify`; `POST /api/logout` ends it): `GET /api/parents/{id}/readings?range=14d`,
 `GET /api/alerts` + `POST /api/alerts/{id}/acknowledge`, `GET /api/refills?status=…`,
 `POST /api/refills/{id}/approve|reject`, `GET /api/parents/{id}/medicines`,
 `GET|PUT /api/parents/{id}/thresholds`, `GET|PUT /api/parents/{id}/sharing`, `GET /api/audit`.
-Interactive docs at http://localhost:8000/docs.
+Interactive docs at http://localhost:8000/docs (mock mode only).
 
 ## Voice and reminders
 
@@ -312,7 +313,9 @@ there needs a public audio URL; see the roadmap).
   refused. Alerts to numbers outside the 24-hour window need `TWILIO_TEMPLATE_CONTENT_SID`.
 - **Voice (ElevenLabs):** `VOICE=elevenlabs`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`
   (see Voice and reminders). Red-alert phone calls: `CALL_PROVIDER=twilio` + `TWILIO_CALL_FROM`.
-- **Dashboard:** set your own `DASHBOARD_DEMO_TOKEN` before showing it to anyone.
+- **Dashboard:** in mock mode, set your own `DASHBOARD_DEMO_TOKEN` before showing it to anyone.
+  With `APP_MODE=dev` or `aws` the demo token is off: members sign in with a one-time code, and
+  the app refuses to start without `SESSION_SECRET` and `MCP_SHARED_SECRET` (see Security).
 - **Bedrock / DynamoDB:** `LLM_PROVIDER=bedrock` and `STORAGE=dynamodb` are switches only today
   (a stub reader and a "not implemented" error). See [docs/AWS_ARCHITECTURE.md](docs/AWS_ARCHITECTURE.md).
 
@@ -364,6 +367,51 @@ exact match on every field (systolic, diastolic, pulse, or glucose value and uni
 - **Data minimisation.** Photos and voice recordings are read and dropped; only the numbers
   (and the transcript shown in the chat) are kept. Every AI tool
   call and every family decision is in the audit log. The MCP server binds to localhost.
+
+## Security
+
+What is protected today:
+
+- **Dashboard sessions** are signed with `SESSION_SECRET` (HMAC-SHA256: member, issued-at,
+  expiry, session version). They last `SESSION_TTL_HOURS` (12 h). Expired, tampered or wrongly
+  signed sessions get 401. **Sign out** ends every session of that member on every device.
+- **Sign-in.** `APP_MODE=mock`: demo token or one-time code. `APP_MODE=dev`/`aws`: one-time code
+  only. The 6-digit code goes to the member's own chat (simulator, Telegram or WhatsApp) and is
+  stored only as a keyed hash. It lasts 5 minutes, allows 5 tries and works once; a new request
+  cancels the old code. The answer is the same whether or not the member exists.
+- **Rate limits:** 5 failed sign-ins per IP per 5 minutes, then 429 with `Retry-After`. Code
+  requests are limited to 3 per member and 10 per IP per 15 minutes. Every sign-in, failed
+  attempt, code request and sign-out is in the audit log, never with the code.
+- **Code messages expire with the code.** They are never retried after 5 minutes or retried
+  forever. Their text becomes `[code removed]` once delivered or expired, and errors from the
+  channel are scrubbed before they reach logs or `delivery_failed`.
+- **MCP server:** every request needs `Authorization: Bearer <MCP_SHARED_SECRET>` (FastMCP
+  token verifier, constant-time compare), and the server binds to localhost. That is why the
+  sender in `_meta` can be trusted: only our API holds the secret. `scripts/start.py` makes a
+  random secret per run when it is empty.
+- **Unsafe production config is refused.** With `APP_MODE=dev`/`aws`, the app stops with one
+  message listing every problem: missing or short secrets, Twilio without `PUBLIC_BASE_URL` or
+  `TWILIO_AUTH_TOKEN`, and a Telegram webhook without `TELEGRAM_WEBHOOK_SECRET`.
+- **Headers:** `X-Content-Type-Options`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`
+  and a strict CSP on the dashboard and API (only our own scripts). `/docs` and `/openapi.json`
+  are on only in mock mode.
+- **Alert texts say when the reading was taken** ("BP 198/127 at 2:14 PM, 24 Nov"), so a red
+  alert delivered late after retries never reads as if it just happened.
+
+Still demo-grade (not ready for real patients yet):
+
+- **The web simulator has no sign-in.** It can send messages as the demo parent and read the
+  audit log. Reset and the demo clock are off in `aws` mode, but the simulator should be off
+  entirely outside mock mode before a real deployment.
+- **Rate limits live in memory** in one API process. They reset on restart, and several
+  processes behind a load balancer would each count separately.
+- **Members sign in with a member ID** (in mock mode with the default token, they pick a name).
+  A real deployment should look members up by phone number or invite link (Cognito on AWS).
+- **The session token sits in the browser's localStorage**, not an HttpOnly cookie, so an XSS
+  bug could read it; the strict CSP is the mitigation.
+- **No TLS in the app.** HTTPS belongs to the proxy or load balancer in front of it. The demo
+  runs on plain HTTP on localhost.
+- **Not externally tested:** no penetration test or security review has been done.
 
 ## Reliability
 

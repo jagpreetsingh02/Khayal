@@ -108,9 +108,12 @@ def test_login_checks_the_demo_token(dash):
     assert me["member"]["name"] == "Ravi Gowda" and me["parents"][0]["id"] == dash.parent.id
 
 
-def test_changing_the_demo_token_ends_sessions(dash, monkeypatch):
+def test_rotating_the_session_secret_ends_sessions(dash, monkeypatch):
     headers = dash.login(dash.ravi)
-    monkeypatch.setenv("DASHBOARD_DEMO_TOKEN", "rotated")
+    monkeypatch.setenv("DASHBOARD_DEMO_TOKEN", "rotated")  # no longer signs sessions
+    get_settings.cache_clear()
+    assert dash.c.get("/api/me", headers=headers).status_code == 200
+    monkeypatch.setenv("SESSION_SECRET", "a-different-secret-" + "x" * 20)
     get_settings.cache_clear()
     assert dash.c.get("/api/me", headers=headers).status_code == 401
 

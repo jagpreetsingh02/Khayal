@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.storage.base import ConflictError, NotFoundError, Store
 from app.storage.models import (
+    REDACTED_TEXT,
     Alert,
     AuditEntry,
     ConsentStatus,
@@ -17,6 +18,7 @@ from app.storage.models import (
     DoseEvent,
     DoseStatus,
     Family,
+    LoginCode,
     Medicine,
     Member,
     OutboxMessage,
@@ -90,6 +92,11 @@ CREATE TABLE IF NOT EXISTS inbound_seen (
   channel TEXT NOT NULL, external_id TEXT NOT NULL, received_at TEXT NOT NULL,
   PRIMARY KEY (channel, external_id)
 );
+CREATE TABLE IF NOT EXISTS login_codes (
+  id TEXT PRIMARY KEY, member_id TEXT NOT NULL REFERENCES members(id), code_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL, expires_at TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0,
+  used_at TEXT, revoked_at TEXT
+);
 CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY, actor TEXT NOT NULL, tool TEXT NOT NULL, args_json TEXT NOT NULL,
   result_json TEXT NOT NULL, parent_id TEXT, created_at TEXT NOT NULL
@@ -111,6 +118,8 @@ MIGRATIONS = [
     ("outbox", "gave_up_at", "TEXT"),
     ("outbox", "alert_id", "TEXT"),
     ("outbox", "level", "TEXT"),
+    ("outbox", "expires_at", "TEXT"),
+    ("outbox", "sensitive", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 # Columns stored as JSON text.
@@ -493,6 +502,7 @@ class SQLiteStore(Store):
                 "  AND gave_up_at IS NULL "
                 "  AND (next_attempt_at IS NULL OR next_attempt_at <= :now) "
                 "  AND (claimed_until IS NULL OR claimed_until <= :now) "
+                "  AND (expires_at IS NULL OR expires_at > :now) "
                 "  ORDER BY created_at, rowid LIMIT :limit) "
                 "RETURNING rowid AS seq, *",
                 {"now": _ts(now), "until": _ts(now + lease), "limit": limit},
@@ -504,11 +514,10 @@ class SQLiteStore(Store):
         ]
 
     def mark_outbox_delivered(self, message_id: str, at: datetime | None = None) -> None:
-        self._update(
-            "outbox",
-            "id",
+        self._finish_outbox(
             message_id,
-            {"delivered_at": at or utcnow(), "claimed_until": None, "last_error": None},
+            "delivered_at = :at, claimed_until = NULL, last_error = NULL",
+            {"at": _ts(at or utcnow())},
         )
 
     def mark_outbox_failed(
@@ -518,14 +527,46 @@ class SQLiteStore(Store):
         next_attempt_at: datetime | None,
         at: datetime | None = None,
     ) -> None:
-        fields: dict[str, Any] = {
-            "last_error": error[:500],
-            "claimed_until": None,
-            "next_attempt_at": next_attempt_at,
+        sets = "last_error = :error, claimed_until = NULL, next_attempt_at = :next"
+        params: dict[str, Any] = {
+            "error": error[:500],
+            "next": _ts(next_attempt_at) if next_attempt_at else None,
         }
-        if next_attempt_at is None:
-            fields["gave_up_at"] = at or utcnow()
-        self._update("outbox", "id", message_id, fields)
+        if next_attempt_at is None:  # final: give up (and drop a secret's text)
+            sets += ", gave_up_at = :at"
+            params["at"] = _ts(at or utcnow())
+        self._finish_outbox(message_id, sets, params, redact=next_attempt_at is None)
+
+    def _finish_outbox(
+        self, message_id: str, sets: str, params: dict[str, Any], *, redact: bool = True
+    ) -> None:
+        """Update one outbox row; a sensitive row's text is blanked when `redact`."""
+        if redact:
+            sets += ", text = CASE WHEN sensitive THEN :redacted ELSE text END"
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                f"UPDATE outbox SET {sets} WHERE id = :_id",
+                {**params, "_id": message_id, "redacted": REDACTED_TEXT},
+            )
+        if cur.rowcount == 0:
+            raise NotFoundError(f"outbox: no row with id={message_id!r}")
+
+    def expire_outbox(self, now: datetime, *, member_id: str | None = None) -> list[OutboxMessage]:
+        expiring = "(expires_at IS NOT NULL AND expires_at <= :now)"
+        params: dict[str, Any] = {"now": _ts(now), "redacted": REDACTED_TEXT}
+        if member_id is not None:  # every pending secret of this member, due or not
+            expiring, params["member"] = "(member_id = :member AND sensitive)", member_id
+        with self._lock, self._conn:
+            rows = self._conn.execute(
+                "UPDATE outbox SET gave_up_at = :now, last_error = 'expired', "
+                "  claimed_until = NULL, "
+                "  text = CASE WHEN sensitive THEN :redacted ELSE text END "
+                f"WHERE delivered_at IS NULL AND gave_up_at IS NULL AND {expiring} "
+                "  AND (claimed_until IS NULL OR claimed_until <= :now) "
+                "RETURNING *",
+                params,
+            ).fetchall()
+        return [_from_row(OutboxMessage, r) for r in rows]
 
     def get_outbox(self, message_id: str) -> OutboxMessage:
         return self._one(OutboxMessage, "outbox", "id", message_id)
@@ -535,6 +576,47 @@ class SQLiteStore(Store):
         if alert_id is not None:
             sql, params = sql + " WHERE alert_id = ?", (alert_id,)
         return self._query(OutboxMessage, sql + " ORDER BY created_at, rowid", params)
+
+    # --- dashboard sign-in codes ---
+    def add_login_code(self, code: LoginCode) -> LoginCode:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE login_codes SET revoked_at = ? "
+                "WHERE member_id = ? AND used_at IS NULL AND revoked_at IS NULL",
+                (_ts(code.created_at), code.member_id),
+            )
+            row = _to_row(code)
+            cols, marks = ", ".join(row), ", ".join(f":{c}" for c in row)
+            self._conn.execute(f"INSERT INTO login_codes ({cols}) VALUES ({marks})", row)
+        return code
+
+    def active_login_code(self, member_id: str, now: datetime) -> LoginCode | None:
+        found = self._query(
+            LoginCode,
+            "SELECT * FROM login_codes WHERE member_id = ? AND used_at IS NULL "
+            "AND revoked_at IS NULL AND expires_at > ? ORDER BY created_at DESC, rowid DESC "
+            "LIMIT 1",
+            (member_id, _ts(now)),
+        )
+        return found[0] if found else None
+
+    def count_login_try(self, code_id: str, max_tries: int) -> int | None:
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "UPDATE login_codes SET tries = tries + 1 WHERE id = ? AND tries < ? "
+                "AND used_at IS NULL AND revoked_at IS NULL RETURNING tries",
+                (code_id, max_tries),
+            ).fetchone()
+        return row["tries"] if row else None
+
+    def use_login_code(self, code_id: str, at: datetime) -> bool:
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "UPDATE login_codes SET used_at = ? WHERE id = ? AND used_at IS NULL "
+                "AND revoked_at IS NULL",
+                (_ts(at), code_id),
+            )
+        return cur.rowcount == 1
 
     # --- inbound dedup ---
     def mark_inbound_seen(self, channel: str, external_id: str) -> bool:
@@ -586,6 +668,7 @@ class SQLiteStore(Store):
             "kv",
             "inbound_seen",
             "outbox",
+            "login_codes",
             "audit_log",
             "sharing",
             "conversation_state",

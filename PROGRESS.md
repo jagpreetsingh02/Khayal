@@ -7,9 +7,12 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 ## Current status
 - Submission (Phase 1 of judging) is in: tag **`submission-phase1`** = the exact submitted
   commit. Repo may change until **26 Nov 2026**; `main` must stay demo-ready for the pitch.
-- Current work stream: **Hardening** (below). H1 done and merged (tag `hardening-h1-done`).
+- Current work stream: **Hardening** (below). H1 + H2 done and merged (tags `hardening-h1-done`,
+  `hardening-h2-done`).
 - Current branch: `main`
-- **Next step: H2 (security)** on branch `hardening-h2-security` (scope to be given by the user).
+- **Next step: H3 (types, CI, Docker)** on branch `hardening-h3-ci` (scope to be given by the user).
+  Suggested extra for H3 or later: turn the web simulator off (or put it behind sign-in)
+  outside mock mode; it is unauthenticated (README "Security", still demo-grade).
 
 ## Hardening (production) — one branch per phase, merged with --no-ff, tagged when done
 - [x] **H1 safety bugs** (`hardening-h1-safety`, tag `hardening-h1-done`): outbox claim/lease
@@ -21,7 +24,15 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
   **Known gap:** crash between webhook ack and end of processing loses that message (id
   already recorded; channel won't resend). Durable inbox = future work. Proactive *parent*
   messages (reminders, follow-ups, low-stock note) are still sent directly, not retried.
-- [ ] **H2 security** (`hardening-h2-security`)
+- [x] **H2 security** (`hardening-h2-security`, tag `hardening-h2-done`): sessions signed with
+  SESSION_SECRET (member, iat, exp 12 h, per-member session version; logout bumps it = all
+  devices), login rate limits (5 fails/IP/5 min -> 429), one-time code sign-in (6 digits,
+  keyed hash, 5 min, 5 tries, single use, 3 requests/member/15 min, same answer for unknown
+  members) via the outbox as `sensitive` + `expires_at` rows (never claimed/retried past
+  expiry, text -> "[code removed]", errors scrubbed); demo token only in mock mode; MCP bearer
+  `MCP_SHARED_SECRET` (FastMCP TokenVerifier; start.py makes one per run); dev/aws startup
+  check lists every problem; security headers + CSP, /docs only in mock; alert reasons carry
+  the reading time ("BP 198/127 at 2:14 PM, 24 Nov").
 - [ ] **H3 types, CI, Docker** (`hardening-h3-ci`)
 
 ## Phase checklist
@@ -53,11 +64,12 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 
 ## How to run (current)
 - Once: `cd dashboard && npm ci && npm run build` (Node 20.19+/22.12+). Backend: `cd backend && uv sync && uv run
-  python -m pytest` (409 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
+  python -m pytest` (439 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
   Local venv was moved from ~/Downloads/care-circle, so `.venv/bin/pytest` has a stale shebang:
   use `python -m pytest` (or `uv sync --reinstall` to fix the scripts).
 - **Demo: `uv run python ../scripts/start.py --seed`** -> http://localhost:8000/simulator and
-  /dashboard/ (token `change-me`). Simulator: ⏰ Next reminder / ⏩ 30 min / ⏩ 1 day (demo clock),
+  /dashboard/ ("Use the demo access token" -> `change-me`, or "Send me a code": the code shows
+  in that member's simulator phone). Local `.env` has a custom demo token. Simulator: ⏰ Next reminder / ⏩ 30 min / ⏩ 1 day (demo clock),
   📊 Weekly summary, 🗣️ sample voice notes, 🎤 recorder, ⏩ Skip 5 minutes, Reset demo.
 - Background runs: start with `.venv/bin/python ../scripts/start.py` (not `uv run`) so stopping
   the task stops the servers; after stopping, check ports 8000/8001 are free.
@@ -68,6 +80,9 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 - uv backend (Python 3.14 local, >=3.11). FastAPI 0.165, **FastMCP 4.2.4**, pydantic 2.14,
   pydantic-settings 2.16 (python-dotenv comes with it), pytest 9.2, ruff 0.17, httpx 0.28,
   tzdata (needed on Windows: no system tz db; check with `PYTHONTZPATH= uv run pytest`).
+- FastMCP 4 auth: subclass `fastmcp.server.auth.TokenVerifier` (`async verify_token` ->
+  `AccessToken | None`), pass `FastMCP(auth=...)` -> 401 before tools; client `Client(url,
+  auth="<token>")` sends Bearer (in-memory transport rejects `auth`). itsdangerous not installed.
 - FastMCP 4: `mcp.run(transport="http")`; tests via `fastmcp.Client(mcp)` + `asyncio.run`;
   `_meta` = `ctx.request_context.meta`; audit + clock sync in `Middleware.on_call_tool`.
 - Dashboard: Vite 8 (`base: '/dashboard/'`), React 19, TS 7, Recharts 3, oxlint (no refs/Date.now
@@ -107,43 +122,29 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
   only the parent edits; atomic idempotent refill decisions + demo pharmacy stub; threshold edits
   need `doctor_confirmed`, ranges + ordering. **Red alerts always reach the family** even if alerts
   aren't shared (user decision); amber respects sharing.
-- 2026-11-23: Live tests opt-in (`RUN_LIVE_TESTS=1`); accuracy_test warns + estimates tokens.
-- 2026-11-23 (Ph 6): branch named `phase-6-polish-aws` (user's request). Docs state plainly
-  that nothing runs on AWS; Bedrock reader and DynamoDB store are switches/stubs only.
-- 2026-11-23 (Ph 5): demo clock = shared offset in kv (`demo_clock_offset_s`), `utcnow()` adds it;
-  zero in aws mode. Scheduler jobs idempotent via DoseEvents / `store.claim(key)`. Follow-up at
-  +30 min marks the dose missed (`followed_up_at`) and a later "1" still counts; taken doses use
-  stock; low stock <=5 days -> `request_refill` once/med/day, not while pending or within 7 days;
-  missed-doses AMBER deduped per IST day server-side; weekly summary Sun 19:00 IST, readings
-  sharing respected.
-- 2026-11-23: Voice = short localized phrases (en/hi, ta partial), chat text stays English.
-  VOICE=mock default (browser speechSynthesis in simulator). TTS cache by hash + daily char
-  budget; failures -> text only. STT transcript is parsed like typed text; spoken readings still
-  need the read-back "1" (`source="voice"`). Calls only for RED on a confirmed reading; Twilio
-  calls only members on the twilio channel; call script drops the parent-only 108/112 line.
-  Voice notes only in the simulator for now (Telegram/WhatsApp get text).
-
-- 2026-11-23: Accuracy published only on AI-generated images, labelled "AI-generated synthetic",
-  never "real" (user's fallback). Voice = premade Sarah (Hindi verified, calm; library voices
-  need a paid plan).
-
-- 2026-11-23: Demo parent speaks English (`language="en"`), voiced en-IN (Indian English) in
-  the simulator (explicit en-IN voice pick) and Twilio `<Say>`; Hindi stays per member.
-- 2026-11-23: Product name is **Khayal** (was Care Circle); old commit messages and tags keep
-  the old name (history not rewritten). No CARE_CIRCLE env vars existed; only the DB default changed.
-
+- 2026-11-23 (Ph 5-6, chores): live tests opt-in; nothing runs on AWS (Bedrock/DynamoDB = stubs);
+  demo clock = kv offset added by `utcnow()` (zero in aws); scheduler jobs idempotent; follow-up
+  +30 min marks missed; low stock <=5 days -> one `request_refill`/med/day; missed-doses AMBER
+  once per IST day; weekly summary Sun 19:00 IST. Voice = short en/hi phrases, VOICE=mock
+  default, TTS cache + daily budget, STT parsed like text (still needs "1"), calls only for RED
+  on a confirmed reading. Accuracy only on AI-generated images, labelled so. Demo parent in
+  English, en-IN voice. Name **Khayal** (old commits/tags keep Care Circle).
 - 2026-11-24 (H1): red retry-forever applies to alert *text* messages; red voice calls stop at
   8 attempts (hours of repeated calls is worse than a retried text). Background ticker /
   scheduler skip a parent who is busy (retry next 30 s pass); demo buttons wait their turn.
   Outbox needs no member turn (atomic claim). Alerts are stored before their outbox rows
   (rows carry `alert_id` + `level`). Twilio `send` is synchronous (slot booked under a lock,
   sleep + HTTP outside it); queue/`drain()` removed.
+- 2026-11-24 (H2): logout = per-member session version in kv (ends all devices). Session times
+  use the real clock (demo clock jumps must not sign out); code + outbox expiry use the app
+  (demo) clock. Code request takes `member_id` (user spec); mock + default token lists the demo
+  members in `/api/login/hint` so the code path is clickable. Audit actor `unknown` for
+  unproven sign-in events; login rows go to the family parent's audit (unknown ids: none).
+  Startup check also requires secrets >= 32 chars. Alert time format "2:14 PM, 24 Nov" (IST).
 
 ## Session log (newest first, one line each)
-- 2026-11-24: Hardening H1 — tag `submission-phase1`; outbox retries + lease claims, inbound
-  dedup + background webhooks, per-member FIFO turns; 16 new tests (393 -> 409); demo checked
-  in mock mode (photo, read-back, red alert + call cards delivered).
-- 2026-11-23: chores — Gowda family names, English voice samples, Indian English voice,
-  rename to Khayal, accuracy tooling + Groq run (16/22 scored), team; 393 tests.
-- 2026-11-22/23: Phases 0-6 done (setup, MCP core, reader, channels, dashboard, voice +
-  reminders, polish + AWS design); fresh-clone checked; 387 tests at phase 6.
+- 2026-11-24: Hardening H2 — sessions, code sign-in, rate limits, MCP bearer, startup check,
+  headers/CSP, reading time in alerts; 30 new tests (409 -> 439); start.py demo run: both
+  sign-ins, MCP 401 without/wrong bearer, red alert over authenticated MCP, Chrome: no CSP errors.
+- 2026-11-24: Hardening H1 (outbox retries, inbound dedup, per-member turns; 409 tests).
+- 2026-11-22/23: Phases 0-6 + chores done (387 tests at phase 6, 393 after chores).

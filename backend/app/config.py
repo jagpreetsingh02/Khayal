@@ -43,7 +43,14 @@ class Settings(BaseSettings):
     aws_region: str = "ap-south-1"
     bedrock_model_id: str = ""
 
-    dashboard_demo_token: str = "change-me"
+    dashboard_demo_token: str = "change-me"  # demo login, mock mode only
+    # Signs dashboard sessions and peppers login-code hashes. Empty in mock mode: a random
+    # one per start (sessions end on restart). Required in dev/aws.
+    session_secret: str = ""
+    session_ttl_hours: float = 12
+    # The API's agent proves itself to the MCP server with "Authorization: Bearer <this>".
+    # scripts/start.py makes a random one per run when empty.
+    mcp_shared_secret: str = ""
     tz: str = "Asia/Kolkata"
 
 
