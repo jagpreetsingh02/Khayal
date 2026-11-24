@@ -74,7 +74,6 @@ def channel(fake, template_sid="", clock=None):
         client=httpx.Client(transport=httpx.MockTransport(fake), follow_redirects=True),
         sleep=clock.sleep,
         monotonic=clock.monotonic,
-        background=False,
     )
 
 
@@ -142,7 +141,6 @@ def test_rate_limit_one_message_per_3_seconds():
     ch.receive(form(Body="hi"))  # opens the 24 h window for the parent
     for i in range(3):
         ch.send(Outgoing(channel="twilio", to_ref=PARENT, member_id="m", text=f"msg {i}"))
-    ch.drain()
     assert [m["Body"] for m in fake.messages] == ["msg 0", "msg 1", "msg 2"]
     assert clock.slept == [3.0, 3.0]
     assert fake.messages[0]["To"] == f"whatsapp:{PARENT}"
@@ -189,7 +187,6 @@ def test_webhook_rejects_bad_signature_and_handles_good_one(monkeypatch):
             assert r.status_code == 200 and r.text.endswith("<Response></Response>")
             params = form(Body="1")
             post(params, twilio_signature(TOKEN, url, params))
-        tw.drain()
         bodies = [m["Body"] for m in fake.messages]
         assert bodies[0].startswith("I read sugar 45 mg/dL")
         assert "I have told your family." in bodies[1]

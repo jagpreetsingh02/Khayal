@@ -30,6 +30,10 @@ SAY_LANG = {"hi": "hi-IN", "ta": "ta-IN", "en": "en-IN"}
 class CallProvider(Protocol):
     name: str
 
+    def can_call(self, member: Member) -> bool:
+        """Whether this provider can reach the member at all (no retry when it cannot)."""
+        ...
+
     def call(self, member: Member, script: Voice, audio_url: str | None, mock_voice: bool) -> bool:
         """Place the call; True if it was placed (or shown, in mock)."""
         ...
@@ -40,6 +44,9 @@ class MockCallProvider:
 
     def __init__(self, simulator) -> None:
         self.simulator = simulator
+
+    def can_call(self, member: Member) -> bool:
+        return member.channel == "simulator"
 
     def call(self, member: Member, script: Voice, audio_url: str | None, mock_voice: bool) -> bool:
         if member.channel != "simulator":
@@ -71,6 +78,10 @@ class TwilioCallProvider:
 
     def __repr__(self) -> str:
         return "TwilioCallProvider()"
+
+    def can_call(self, member: Member) -> bool:
+        number = member.channel_ref.removeprefix("whatsapp:")
+        return member.channel == "twilio" and bool(E164.match(number))
 
     def twiml(self, script: Voice, audio_url: str | None) -> str:
         if audio_url and self.public_base_url:

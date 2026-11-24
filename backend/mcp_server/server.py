@@ -326,10 +326,6 @@ def create_server(
         text = f"{final.level.upper()} alert for {parent.name}: {final.reason}"
         # A phone call only for a RED alert on a confirmed reading (never for amber / doses).
         call = final.level == "red" and bool(reading_id) and get_settings().call_provider != "none"
-        for member in family:
-            notifier.send(member, text)
-            if call:
-                notifier.voice_call(member, text)
         alert = s.add_alert(
             Alert(
                 parent_id=parent.id,
@@ -340,6 +336,12 @@ def create_server(
                 created_at=clock(),
             )
         )
+        # Written to the outbox with the alert id: delivery is tracked per alert, and red
+        # messages are retried until a channel accepts them (app/channels/service.py).
+        for member in family:
+            notifier.send(member, text, alert_id=alert.id, level=final.level)
+            if call:
+                notifier.voice_call(member, text, alert_id=alert.id, level=final.level)
         return {
             "sent": True,
             "alert_id": alert.id,

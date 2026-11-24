@@ -5,6 +5,8 @@ Local dev uses long polling (getUpdates), so no public URL is needed. A webhook
 Sender mapping: the Telegram user id is the member's `channel_ref` (channel "telegram");
 `scripts/add_member.py` registers one. Sending "/id" to the bot replies with your id.
 Private chats only. Photos come via getFile (Telegram allows up to 20 MB).
+Duplicates: every update_id is recorded (webhook and polling); a repeated one is skipped,
+so a webhook retry or a restart that re-reads updates never logs a reading twice.
 
 The bot token is part of every API URL, so URLs are never logged or put in errors.
 """
@@ -60,6 +62,10 @@ class TelegramChannel(Channel):
             raise ChannelError(f"Telegram photo download failed: HTTP {r.status_code}")
         return r.content
 
+    def sender_of(self, update: dict[str, Any]) -> str | None:
+        sender = (update.get("message") or {}).get("from", {}).get("id")
+        return None if sender is None else str(sender)
+
     def receive(self, update: dict[str, Any]) -> Incoming | None:
         msg = update.get("message")
         if not msg or msg.get("chat", {}).get("type") != "private" or "from" not in msg:
@@ -91,26 +97,41 @@ class TelegramChannel(Channel):
 
     # --- long polling (local dev) ---
 
-    def poll_once(self, service, timeout: int = 25) -> int:
+    def fetch_updates(self, timeout: int = 25) -> list[dict[str, Any]]:
         params: dict[str, Any] = {"timeout": timeout, "allowed_updates": ["message"]}
         if self.offset is not None:
             params["offset"] = self.offset
         updates = self._api("getUpdates", **params)
+        if updates:
+            self.offset = max(u["update_id"] for u in updates) + 1
+        return updates
+
+    def poll_once(self, service, timeout: int = 25) -> int:
+        """Fetch and process updates one by one in this thread (tests, scripts)."""
+        updates = self.fetch_updates(timeout)
         for update in updates:
-            self.offset = update["update_id"] + 1
-            try:
-                service.handle("telegram", update)
-            except Exception:
-                log.exception("telegram update %s failed", update.get("update_id"))
+            ticket = service.accept("telegram", update, update_id(update))
+            if ticket is not None:
+                service.process("telegram", update, ticket)
         return len(updates)
 
-    async def start_polling(self, service) -> None:
-        """Background task started by the API when CHANNEL=telegram (polling mode)."""
+    async def start_polling(self, service, inbound) -> None:
+        """Background task started by the API when CHANNEL=telegram (polling mode). Each
+        update is accepted in order, then processed in the background (`inbound`), so one
+        parent's slow photo does not hold up the others."""
         await asyncio.to_thread(self._api, "deleteWebhook")  # getUpdates refuses while one is set
         log.info("Telegram long polling started")
         while True:
             try:
-                await asyncio.to_thread(self.poll_once, service)
+                updates = await asyncio.to_thread(self.fetch_updates)
             except ChannelError as exc:
                 log.warning("%s; retrying in 5 s", exc)
                 await asyncio.sleep(5)
+                continue
+            for update in updates:
+                await inbound.accept("telegram", update, update_id(update))
+
+
+def update_id(update: dict[str, Any]) -> str | None:
+    uid = update.get("update_id")
+    return None if uid is None else str(uid)

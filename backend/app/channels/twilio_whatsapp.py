@@ -8,13 +8,18 @@
   to a CDN on another host; we always send Basic auth (account SID + token) and httpx
   drops the header on the cross-host redirect. A 404 right after the webhook can mean the
   media is not there yet, so it is retried briefly. Not verified live yet.
-- Outbound: REST Messages API, at most one message per 3 seconds (Sandbox limit), sent
-  from a background queue so the webhook answers fast.
+- Outbound: REST Messages API, at most one message per 3 seconds (Sandbox limit). `send`
+  returns only after Twilio accepted the message (so the outbox knows), and waits for its
+  rate-limit slot without holding a lock. The webhook answers at once anyway: messages are
+  processed in the background (app/api/webhooks.py).
+- Duplicates: Twilio retries a webhook it thinks failed; MessageSid is recorded and a
+  repeated one is not processed again.
 - 24-hour window: free-form text only to numbers that wrote to us in the last 24 h.
   Anything proactive outside it (alerts to children who never wrote) must use a
   pre-approved template: the Sandbox only allows its fixed templates, so set
   TWILIO_TEMPLATE_CONTENT_SID to one of them (Console > Messaging > Content Template
-  Builder); without it such messages are not sent (logged instead).
+  Builder); without it such messages fail, and the outbox retries them (they go out once
+  the member writes in and the window opens).
 """
 
 import base64
@@ -22,7 +27,6 @@ import hashlib
 import hmac
 import json
 import logging
-import queue
 import threading
 import time
 from collections.abc import Callable
@@ -73,7 +77,6 @@ class TwilioWhatsAppChannel(Channel):
         client: httpx.Client | None = None,
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
-        background: bool = True,
     ) -> None:
         if not account_sid or not auth_token:
             raise ChannelError("CHANNEL=twilio needs TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN")
@@ -84,11 +87,9 @@ class TwilioWhatsAppChannel(Channel):
         self._client = client or httpx.Client(timeout=30, follow_redirects=True)
         self._sleep = sleep
         self._monotonic = monotonic
-        self._last_sent: float | None = None
+        self._next_slot: float | None = None  # monotonic time of the next free send slot
+        self._slot_lock = threading.Lock()  # held only to book a slot, never while sending
         self._last_inbound: dict[str, datetime] = {}  # number -> last message from them
-        self._queue: queue.Queue[Outgoing] = queue.Queue()
-        self._background = background
-        self._worker: threading.Thread | None = None
 
     @classmethod
     def from_settings(cls, s: Settings) -> "TwilioWhatsAppChannel":
@@ -125,6 +126,9 @@ class TwilioWhatsAppChannel(Channel):
             return r.content
         raise ChannelError("Media download failed")  # pragma: no cover
 
+    def sender_of(self, form: dict[str, str]) -> str | None:
+        return strip_prefix(form.get("From", "")) or None
+
     def receive(self, form: dict[str, str]) -> Incoming | None:
         sender = strip_prefix(form.get("From", ""))
         if not sender:
@@ -147,30 +151,18 @@ class TwilioWhatsAppChannel(Channel):
         return last is not None and (now or utcnow()) - last < WINDOW
 
     def send(self, msg: Outgoing) -> None:
-        self._queue.put(msg)
-        if self._background and (self._worker is None or not self._worker.is_alive()):
-            self._worker = threading.Thread(target=self._run, name="twilio-sender", daemon=True)
-            self._worker.start()
-
-    def _run(self) -> None:
-        while True:
-            msg = self._queue.get()
-            try:
-                self.deliver(msg)
-            except Exception:
-                log.exception("Twilio send to %s failed", msg.to_ref)
-
-    def drain(self) -> None:
-        """Send everything queued, in this thread (tests, background=False)."""
-        while not self._queue.empty():
-            self.deliver(self._queue.get_nowait())
+        if self.deliver(msg) is None:
+            raise ChannelError("not sent: outside the 24 h window and no template configured")
 
     def _throttle(self) -> None:
-        if self._last_sent is not None:
-            wait = MIN_INTERVAL - (self._monotonic() - self._last_sent)
-            if wait > 0:
-                self._sleep(wait)
-        self._last_sent = self._monotonic()
+        """Book the next free slot (one message per MIN_INTERVAL), then wait for it outside
+        the lock: senders for other parents only wait for their own slot."""
+        with self._slot_lock:
+            now = self._monotonic()
+            slot = now if self._next_slot is None else max(now, self._next_slot)
+            self._next_slot = slot + MIN_INTERVAL
+        if slot > now:
+            self._sleep(slot - now)
 
     def deliver(self, msg: Outgoing) -> dict[str, Any] | None:
         data: dict[str, str] = {"From": self.from_number, "To": PREFIX + msg.to_ref}

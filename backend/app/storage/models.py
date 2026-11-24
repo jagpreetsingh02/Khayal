@@ -167,7 +167,10 @@ class AuditEntry(BaseModel):
 class OutboxMessage(BaseModel):
     """A message for a member written by the MCP server (e.g. a family alert). The MCP server
     may run in another process, so the API picks these up from the store and delivers them
-    on the member's channel."""
+    on the member's channel.
+
+    Delivery is claimed with a short lease, marked delivered only after the channel accepted
+    it, and retried with backoff otherwise (see app/channels/service.py)."""
 
     id: str = Field(default_factory=lambda: new_id("out"))
     member_id: str
@@ -176,5 +179,18 @@ class OutboxMessage(BaseModel):
     # Optional voice note: a short phrase in the member's language (see app/voice/phrases.py).
     voice_text: str | None = None
     voice_lang: str | None = None
+    # Set for alert messages: which alert, and its level (red messages retry until delivered).
+    alert_id: str | None = None
+    level: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     delivered_at: datetime | None = None
+    attempts: int = 0  # delivery attempts started (counted when claimed)
+    last_error: str | None = None
+    next_attempt_at: datetime | None = None  # None: due now
+    claimed_until: datetime | None = None  # lease of the process sending it right now
+    gave_up_at: datetime | None = None  # final failure (never for red alert messages)
+
+    @property
+    def retries_forever(self) -> bool:
+        """Red alert text messages keep retrying until delivered."""
+        return self.level == "red" and self.kind == "message"

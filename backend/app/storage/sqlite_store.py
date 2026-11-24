@@ -86,6 +86,10 @@ CREATE TABLE IF NOT EXISTS outbox (
   id TEXT PRIMARY KEY, member_id TEXT NOT NULL REFERENCES members(id), kind TEXT NOT NULL,
   text TEXT NOT NULL, created_at TEXT NOT NULL, delivered_at TEXT
 );
+CREATE TABLE IF NOT EXISTS inbound_seen (
+  channel TEXT NOT NULL, external_id TEXT NOT NULL, received_at TEXT NOT NULL,
+  PRIMARY KEY (channel, external_id)
+);
 CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY, actor TEXT NOT NULL, tool TEXT NOT NULL, args_json TEXT NOT NULL,
   result_json TEXT NOT NULL, parent_id TEXT, created_at TEXT NOT NULL
@@ -100,6 +104,13 @@ MIGRATIONS = [
     ("dose_events", "followed_up_at", "TEXT"),
     ("outbox", "voice_text", "TEXT"),
     ("outbox", "voice_lang", "TEXT"),
+    ("outbox", "attempts", "INTEGER NOT NULL DEFAULT 0"),
+    ("outbox", "last_error", "TEXT"),
+    ("outbox", "next_attempt_at", "TEXT"),
+    ("outbox", "claimed_until", "TEXT"),
+    ("outbox", "gave_up_at", "TEXT"),
+    ("outbox", "alert_id", "TEXT"),
+    ("outbox", "level", "TEXT"),
 ]
 
 # Columns stored as JSON text.
@@ -472,16 +483,68 @@ class SQLiteStore(Store):
     def add_outbox(self, message: OutboxMessage) -> OutboxMessage:
         return self._insert("outbox", message)
 
-    def take_outbox(self) -> list[OutboxMessage]:
-        now = _ts(utcnow())
+    def claim_outbox(self, now: datetime, lease: timedelta, limit: int = 50) -> list[OutboxMessage]:
+        # One UPDATE ... RETURNING: SQLite runs a write statement alone (per connection and,
+        # via the database lock, across processes), so two claimers never get the same row.
         with self._lock, self._conn:
             rows = self._conn.execute(
-                "SELECT * FROM outbox WHERE delivered_at IS NULL ORDER BY created_at, rowid"
+                "UPDATE outbox SET claimed_until = :until, attempts = attempts + 1 "
+                "WHERE id IN (SELECT id FROM outbox WHERE delivered_at IS NULL "
+                "  AND gave_up_at IS NULL "
+                "  AND (next_attempt_at IS NULL OR next_attempt_at <= :now) "
+                "  AND (claimed_until IS NULL OR claimed_until <= :now) "
+                "  ORDER BY created_at, rowid LIMIT :limit) "
+                "RETURNING rowid AS seq, *",
+                {"now": _ts(now), "until": _ts(now + lease), "limit": limit},
             ).fetchall()
-            self._conn.executemany(
-                "UPDATE outbox SET delivered_at = ? WHERE id = ?", [(now, r["id"]) for r in rows]
+        rows = sorted(rows, key=lambda r: (r["created_at"], r["seq"]))
+        return [
+            OutboxMessage.model_validate({k: r[k] for k in r.keys() if k != "seq"})  # noqa: SIM118
+            for r in rows
+        ]
+
+    def mark_outbox_delivered(self, message_id: str, at: datetime | None = None) -> None:
+        self._update(
+            "outbox",
+            "id",
+            message_id,
+            {"delivered_at": at or utcnow(), "claimed_until": None, "last_error": None},
+        )
+
+    def mark_outbox_failed(
+        self,
+        message_id: str,
+        error: str,
+        next_attempt_at: datetime | None,
+        at: datetime | None = None,
+    ) -> None:
+        fields: dict[str, Any] = {
+            "last_error": error[:500],
+            "claimed_until": None,
+            "next_attempt_at": next_attempt_at,
+        }
+        if next_attempt_at is None:
+            fields["gave_up_at"] = at or utcnow()
+        self._update("outbox", "id", message_id, fields)
+
+    def get_outbox(self, message_id: str) -> OutboxMessage:
+        return self._one(OutboxMessage, "outbox", "id", message_id)
+
+    def list_outbox(self, *, alert_id: str | None = None) -> list[OutboxMessage]:
+        sql, params = "SELECT * FROM outbox", ()
+        if alert_id is not None:
+            sql, params = sql + " WHERE alert_id = ?", (alert_id,)
+        return self._query(OutboxMessage, sql + " ORDER BY created_at, rowid", params)
+
+    # --- inbound dedup ---
+    def mark_inbound_seen(self, channel: str, external_id: str) -> bool:
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO inbound_seen (channel, external_id, received_at) "
+                "VALUES (?, ?, ?)",
+                (channel, external_id, _ts(utcnow())),
             )
-        return [_from_row(OutboxMessage, r).model_copy(update={"delivered_at": now}) for r in rows]
+        return cur.rowcount == 1
 
     # --- audit ---
     def add_audit(self, entry: AuditEntry) -> AuditEntry:
@@ -521,6 +584,7 @@ class SQLiteStore(Store):
     def reset(self) -> None:
         tables = [
             "kv",
+            "inbound_seen",
             "outbox",
             "audit_log",
             "sharing",
