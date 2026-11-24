@@ -110,6 +110,7 @@ def test_no_repeat_for_15_minutes_sends_amber_to_children(sim):
     say(sim, "1")
     say(sim, sample="synthetic_bp_high.jpg")
     say(sim, "1")
+    say(sim, "2")  # answered "no": a missing repeat stays amber
     for _ in range(3):
         sim.post("/simulator/api/skip", json={"minutes": 5})
     s = state(sim)
@@ -117,6 +118,18 @@ def test_no_repeat_for_15_minutes_sends_amber_to_children(sim):
     for texts in child_texts(s):
         assert len(texts) == 1 and texts[0].startswith("AMBER alert for Lakshmi Gowda: BP 186/122")
         assert "rest" not in texts[0].lower()
+
+
+def test_silent_parent_at_a_severe_reading_gets_red_after_15_minutes(sim):
+    say(sim, "1")
+    say(sim, sample="synthetic_bp_high.jpg")
+    say(sim, "1")  # confirmed; the warning-signs question is never answered
+    for _ in range(3):
+        sim.post("/simulator/api/skip", json={"minutes": 5})
+    s = state(sim)
+    for texts in child_texts(s):
+        assert len(texts) == 1 and texts[0].startswith("RED alert for Lakshmi Gowda: BP 186/122")
+        assert texts[0].endswith("Please call her now.")
 
 
 def test_uploaded_unknown_photo_asks_for_retake(sim):

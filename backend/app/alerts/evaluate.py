@@ -28,6 +28,13 @@ def whose_doctor(store: Store, parent_id: str) -> str:
         return "their"
 
 
+def pronoun_of(store: Store, parent_id: str) -> str:
+    try:
+        return store.get_member(parent_id).pronoun
+    except NotFoundError:
+        return "they"
+
+
 def evaluate_confirmed_reading(store: Store, reading: Reading) -> Evaluation:
     t = effective_thresholds(store.list_thresholds(reading.parent_id))
     history = store.list_readings(
@@ -56,7 +63,8 @@ def evaluate_for_alert(store: Store, reading: Reading, now: datetime) -> list[Ev
         later = store.list_readings(
             reading.parent_id, since=reading.created_at, type="bp", status="confirmed"
         )
-        return [evaluate_bp_no_repeat(reading, later, now, t, whose=whose)]
+        pronoun = pronoun_of(store, reading.parent_id)
+        return [evaluate_bp_no_repeat(reading, later, now, t, whose=whose, pronoun=pronoun)]
     found = [evaluation]
     if reading.type == "glucose":
         later = store.list_readings(

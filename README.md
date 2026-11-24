@@ -234,7 +234,8 @@ her doctor set" (the pronoun is set at onboarding; default "their").
 |---|---|
 | Confirmed BP at/above the severe limit (default 180/120) | **Before anything else**, one question: chest pain, breathlessness, weakness/numbness on one side or slurred speech, severe headache, confusion, or sudden vision problems? Reply 1 yes / 2 no (voice-note version in en/hi/ta) |
 | … answer **1 (yes)** | **RED at once**: family alert + call; the parent is told to call 108/112 |
-| … answer **2 (no)**, or **no reply in 5 minutes** (written to the audit log) | Rest 5 minutes and repeat, as before. No confirmed repeat in 15 minutes → AMBER to the family |
+| … answer **2 (no)**, or **no reply in 5 minutes** (written to the audit log) | Rest 5 minutes and repeat, as before. Answered "no" and no confirmed repeat in 15 minutes → AMBER to the family |
+| … **no reply** to the question **and** no confirmed repeat in 15 minutes | **RED** (`bp_severe_no_reply`): silence after a severe reading can mean she cannot reply. "…She did not answer the warning-signs question and no repeat reading was taken within 15 minutes. Please call her now." Normal red path: always reaches the family, retried until delivered, rings the family |
 | Confirmed repeat 5-60 minutes later, still severe | The question again. Yes → RED + 108/112. No / no reply → **RED "Urgent: contact her doctor today"** (no ambulance wording) |
 | Glucose < 54 mg/dL (fixed floor) | RED to the family; the parent gets the doctor's plan and a recheck request |
 | Glucose 54-69 mg/dL (fixed floor 70) | AMBER + "check again in 15 minutes"; **no confirmed recheck in 15 minutes → family alert** |
