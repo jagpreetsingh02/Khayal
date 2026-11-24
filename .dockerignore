@@ -1,0 +1,27 @@
+# Secrets and local state never go into the image.
+**/.env
+**/.env.*
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/.voice_cache
+
+# Dependencies and build output are rebuilt inside the image.
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+dashboard/dist
+
+# Not needed at runtime.
+.git
+.github
+.claude
+docs
+backend/tests
+samples/generated_medical_test_images_jpg
+KICKOFF_PROMPT.md
+*.log
+.DS_Store
