@@ -15,7 +15,7 @@ messages quoted below are what the app actually sends (checked on a fresh clone,
 3. Open two browser windows side by side:
    - **Left:** http://localhost:8000/simulator (parent's chat in the middle, Ravi's and Priya's
      phones on the side, the live MCP tool log below).
-   - **Right:** http://localhost:8000/dashboard/ → token `change-me` → **Continue** →
+   - **Right:** http://localhost:8000/dashboard/ → **Use the demo access token** → `change-me` → **Continue** →
      **Ravi Gowda**.
 4. Turn your browser's sound on (voice notes and the call card are read aloud by the browser in
    mock mode).
@@ -124,7 +124,7 @@ when 5 or fewer days are left), go straight to **Approve**.
 
 ### 3:10 Parent turns off sharing (25 s)
 
-1. Dashboard: **Sign out** → token `change-me` → **Continue** → **Lakshmi Gowda** (*Parent: can
+1. Dashboard: **Sign out** → **Use the demo access token** → `change-me` → **Continue** → **Lakshmi Gowda** (*Parent: can
    change what is shared*).
 2. **Limits & sharing** → under *Sharing and consent*, switch off **Medicines**.
 3. **Sign out** → sign in as **Ravi Gowda** → **Medicines** now says *"Lakshmi Gowda has not
