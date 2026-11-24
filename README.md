@@ -392,6 +392,10 @@ What is protected today:
 - **Unsafe production config is refused.** With `APP_MODE=dev`/`aws`, the app stops with one
   message listing every problem: missing or short secrets, Twilio without `PUBLIC_BASE_URL` or
   `TWILIO_AUTH_TOKEN`, and a Telegram webhook without `TELEGRAM_WEBHOOK_SECRET`.
+- **The web simulator is mock-only.** `/simulator` and its API (send as a parent, reset, reseed,
+  demo clock, weekly summary now) and the dashboard's "Simulate low stock (demo)" button exist
+  only with `APP_MODE=mock`; in `dev` and `aws` they return 404 and `/` opens the dashboard.
+  The simulator has no sign-in, which is fine only for a local demo.
 - **Headers:** `X-Content-Type-Options`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`
   and a strict CSP on the dashboard and API (only our own scripts). `/docs` and `/openapi.json`
   are on only in mock mode.
@@ -400,9 +404,6 @@ What is protected today:
 
 Still demo-grade (not ready for real patients yet):
 
-- **The web simulator has no sign-in.** It can send messages as the demo parent and read the
-  audit log. Reset and the demo clock are off in `aws` mode, but the simulator should be off
-  entirely outside mock mode before a real deployment.
 - **Rate limits live in memory** in one API process. They reset on restart, and several
   processes behind a load balancer would each count separately.
 - **Members sign in with a member ID** (in mock mode with the default token, they pick a name).

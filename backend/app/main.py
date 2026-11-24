@@ -104,8 +104,11 @@ def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_
                 await task
         await inbound.drain()  # acknowledged messages still being processed
 
-    # API docs (/docs, /redoc, /openapi.json) only in mock mode.
-    docs = settings.app_mode == "mock"
+    # Mock mode only: API docs (/docs, /redoc, /openapi.json) and the web simulator, which
+    # sends messages as any parent and resets / reseeds / moves the demo clock with no sign-in.
+    # In dev and aws those routes do not exist (404).
+    mock = settings.app_mode == "mock"
+    docs = mock
     app = FastAPI(
         title="Khayal",
         version="0.5.0",
@@ -115,7 +118,8 @@ def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_
         openapi_url="/openapi.json" if docs else None,
     )
     app.state.login_limits = LoginLimits()
-    app.include_router(simulator_router)
+    if mock:
+        app.include_router(simulator_router)
 
     @app.middleware("http")
     async def headers(request: Request, call_next):
@@ -165,7 +169,7 @@ def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_
 
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
-        return RedirectResponse("/simulator")
+        return RedirectResponse("/simulator" if mock else "/dashboard/")
 
     return app
 

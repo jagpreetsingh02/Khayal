@@ -853,8 +853,8 @@ class LowStockBody(BaseModel):
 def simulate_low_stock(parent_id: str, body: LowStockBody, request: Request, me: Me):
     """Demo button: the medicine runs low, so the AI requests a refill through the real MCP
     `request_refill` tool. The family then approves or rejects it here."""
-    if get_settings().app_mode == "aws":
-        raise HTTPException(403, "Demo controls are disabled in aws mode.")
+    if get_settings().app_mode != "mock":  # demo control: mock mode only, like the simulator
+        raise HTTPException(404, "Not Found")
     svc = _svc(request)
     store = svc.store
     parent = _parent(store, me, parent_id)

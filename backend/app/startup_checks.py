@@ -53,6 +53,11 @@ def config_problems(settings: Settings, component: str = "api") -> tuple[list[st
         and not settings.telegram_webhook_secret
     ):
         errors.append("CHANNEL=telegram with TELEGRAM_MODE=webhook needs TELEGRAM_WEBHOOK_SECRET.")
+    if settings.channel == "simulator" and component == "api":
+        warnings.append(
+            "CHANNEL=simulator: the web simulator exists only in APP_MODE=mock, so no parent "
+            "can chat here. Set CHANNEL=telegram or CHANNEL=twilio."
+        )
     if settings.dashboard_demo_token == DEMO_TOKEN_DEFAULT and component == "api":
         warnings.append(
             "DASHBOARD_DEMO_TOKEN is still 'change-me' (the demo login is off in "
