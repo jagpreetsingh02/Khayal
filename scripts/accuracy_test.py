@@ -229,8 +229,10 @@ def evaluate(
                 misses.append((field, want, have))
         device = expected.device_type if label.kind == "meter" else "strip"
         # legible=false where the label expects a readable photo: the reader refused to guess.
-        said_unreadable = got is not None and expected.legible and (
-            not got.legible or (label.kind == "meter" and got.device_type == "unknown")
+        said_unreadable = (
+            got is not None
+            and expected.legible
+            and (not got.legible or (label.kind == "meter" and got.device_type == "unknown"))
         )
         implausible = (
             got is not None
