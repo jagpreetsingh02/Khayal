@@ -13,6 +13,7 @@ from app.alerts.thresholds import (
     DEFAULT_THRESHOLDS,
     effective_thresholds,
     evaluate_glucose,
+    reading_time,
     validate_threshold_update,
 )
 from app.conversation import templates as tpl
@@ -97,10 +98,11 @@ def test_no_reply_in_5_minutes_is_audited_and_carries_on_as_today(w):
     assert w.state.state == AWAITING_REPEAT
     [audit] = symptom_audits(w)
     assert audit == {"answer": "no_reply", "note": "no reply within 5 minutes", "actor": "system"}
-    # the repeat window still counts from the first reading: 15 min without one = amber
+    # the repeat window still counts from the first reading: 15 min without one = RED,
+    # because the question was never answered (H5)
     w.clock.advance(10)
     out = w.engine.tick()
-    assert any(t.startswith("AMBER alert") for t in w.to_family(out))
+    assert any(t.startswith("RED alert") for t in w.to_family(out))
 
 
 def test_anything_but_yes_or_no_gets_the_question_again(w):
@@ -401,3 +403,139 @@ def test_weekly_summary_compares_the_home_average_with_135_85(w):
     assert "Home BP average: 126/79, below the 135/85 reference" in below
     for text in (above, below):
         assert filter_summary(text) == (text, [])  # passes the diagnosis / dosing filter
+
+
+# ---------- a silent parent at a severe reading (H5) ----------
+
+
+def _silent_first_reading(w):
+    """Severe BP confirmed, then no answer to the question (no_reply after 5 minutes)."""
+    w.say(photo=HIGH)
+    w.say("1")
+    w.clock.advance(5.5)
+    w.engine.tick()
+    assert w.store.list_readings(w.parent.id, status="confirmed")[0].symptoms == "no_reply"
+
+
+def test_no_reply_and_no_repeat_is_red_at_15_minutes_and_not_before(w):
+    _silent_first_reading(w)
+    w.clock.advance(9)  # 14.5 minutes after the reading
+    assert w.engine.tick() == []
+    assert w.store.list_alerts(w.parent.id) == []
+    w.clock.advance(1)
+    out = w.engine.tick()
+    family = w.to_family(out)
+    assert len(family) == 2
+    first = w.store.list_readings(w.parent.id, status="confirmed")[0]
+    for text in family:
+        assert text.startswith(
+            f"RED alert for Lakshmi: BP 186/122 at {reading_time(first.created_at)}"
+        )
+        assert "at or above the limit their doctor set (180/120)" in text
+        assert "They did not answer the warning-signs question" in text
+        assert text.endswith("no repeat reading was taken within 15 minutes. Please call them now.")
+        assert blocked_terms(text) == []
+    [alert] = w.store.list_alerts(w.parent.id)
+    assert (alert.level, alert.rule) == ("red", "bp_severe_no_reply")
+    # created once: later ticks and messages add nothing
+    w.clock.advance(1)
+    assert w.to_family(w.engine.tick()) == []
+    assert w.to_family(w.send("hello")) == []
+    assert len(w.store.list_alerts(w.parent.id)) == 1
+
+
+def test_red_no_reply_alert_takes_the_normal_red_path():
+    """Always reaches the family (even with alerts not shared), red outbox rows retry until
+    delivered, and the family is rung (call rules unchanged)."""
+    from app.storage.models import Sharing
+    from tests.test_mcp_tools import World as ToolWorld
+
+    tw = ToolWorld()
+    tw.store.set_sharing(Sharing(parent_id=tw.parent.id, alerts=False))
+    tw.store._conn.execute("UPDATE members SET pronoun = 'she' WHERE id = ?", (tw.parent.id,))
+    first = tw.confirmed_reading(
+        type="bp", systolic=190, diastolic=125, created_at=utcnow() - timedelta(minutes=16)
+    )
+    tw.store.set_reading_symptoms(first.id, "no_reply")
+    out = tw.call("alert_family", {"level": "amber", "reading_id": first.id})
+    assert out["sent"] and out["level"] == "red" and out["rule"] == "bp_severe_no_reply"
+    assert out["message"].endswith(
+        "She did not answer the warning-signs question and no repeat reading was taken "
+        "within 15 minutes. Please call her now."
+    )
+    assert "the limit her doctor set (180/120)" in out["message"]
+    assert {m.member_id for m in tw.outbox.outbox} == {c.id for c in tw.children}
+    assert all(m.level == "red" for m in tw.outbox.outbox)
+    again = tw.call("alert_family", {"level": "red", "reading_id": first.id})
+    assert again["already_sent"] and len(tw.store.list_alerts(tw.parent.id)) == 1
+
+
+def test_red_no_reply_rings_the_family_when_calls_are_on(monkeypatch):
+    from app.config import get_settings
+    from tests.test_mcp_tools import World as ToolWorld
+
+    monkeypatch.setenv("CALL_PROVIDER", "mock")
+    get_settings.cache_clear()
+    try:
+        tw = ToolWorld()
+        first = tw.confirmed_reading(
+            type="bp", systolic=190, diastolic=125, created_at=utcnow() - timedelta(minutes=16)
+        )
+        tw.store.set_reading_symptoms(first.id, "no_reply")
+        out = tw.call("alert_family", {"level": "red", "reading_id": first.id})
+    finally:
+        get_settings.cache_clear()
+    assert out["voice_call"] is True
+    assert sorted(m.kind for m in tw.outbox.outbox) == [
+        "message",
+        "message",
+        "voice_call",
+        "voice_call",
+    ]
+
+
+def test_answered_no_and_no_repeat_is_still_amber(w):
+    w.say(photo=HIGH)
+    w.say("1")
+    w.say("2")
+    w.clock.advance(16)
+    w.engine.tick()
+    [alert] = w.store.list_alerts(w.parent.id)
+    assert (alert.level, alert.rule) == ("amber", "bp_severe_no_repeat")
+
+
+def test_no_reply_but_a_repeat_taken_is_evaluated_on_its_own(w):
+    _silent_first_reading(w)
+    w.clock.advance(1)  # 6.5 minutes after the first: repeat, back below the limit
+    w.say(photo="synthetic_bp_normal.jpg")
+    assert w.say("1") == tpl.REPEAT_OK.format(value="132/84, pulse 74")
+    w.clock.advance(15)
+    assert w.engine.tick() == []
+    assert w.store.list_alerts(w.parent.id) == []
+
+
+def test_no_reply_rule_unit():
+    from app.alerts.thresholds import evaluate_bp_no_repeat
+
+    t = effective_thresholds([])
+    now = utcnow()
+    first = Reading(
+        parent_id="p",
+        type="bp",
+        systolic=190,
+        diastolic=125,
+        status="confirmed",
+        symptoms="no_reply",
+        created_at=now - timedelta(minutes=15),
+    )
+    ev = evaluate_bp_no_repeat(first, [], now, t, whose="her", pronoun="she")
+    assert (ev.level, ev.rule) == ("red", "bp_severe_no_reply")
+    assert ev.reason == (
+        f"BP 190/125 at {reading_time(first.created_at)} was at or above the limit her doctor "
+        "set (180/120). She did not answer the warning-signs question and no repeat reading "
+        "was taken within 15 minutes. Please call her now."
+    )
+    early = evaluate_bp_no_repeat(first, [], now - timedelta(seconds=1), t)
+    assert early.level == "none" and early.ask_repeat
+    answered = first.model_copy(update={"symptoms": "no"})
+    assert evaluate_bp_no_repeat(answered, [], now, t).rule == "bp_severe_no_repeat"

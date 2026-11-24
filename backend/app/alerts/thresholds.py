@@ -59,6 +59,9 @@ SYMPTOM_WAIT = timedelta(minutes=5)
 GLUCOSE_RECHECK_WAIT = timedelta(minutes=15)
 EMERGENCY_LINE = "If you feel unwell, call 108/112."  # parent wording (older family texts)
 
+SUBJECT = {"she": "She", "he": "He", "they": "They"}
+OBJECT = {"she": "her", "he": "him", "they": "them"}
+
 BP_WARNING_SIGNS = (
     "chest pain, breathlessness, weakness or numbness on one side or slurred speech, "
     "severe headache, confusion, or sudden vision problems"
@@ -266,9 +269,13 @@ def evaluate_bp_no_repeat(
     t: dict[str, float],
     tz: str = "Asia/Kolkata",
     whose: str = "their",
+    pronoun: str = "they",
 ) -> Evaluation:
-    """Amber when a first severe BP got no confirmed repeat within BP_REPEAT_WAIT.
+    """A first severe BP with no confirmed repeat within BP_REPEAT_WAIT.
 
+    Amber when the parent answered the warning-signs question ("no"). RED when the question
+    was never answered (`symptoms == "no_reply"`): silence after a severe reading can mean
+    the parent cannot reply, so it is not a soft alert.
     `later` = the parent's confirmed BP readings taken after `first` (any order).
     """
     if first.type != "bp" or not is_severe_bp(first, t):
@@ -285,6 +292,16 @@ def evaluate_bp_no_repeat(
         return Evaluation()  # a repeat was taken; it is evaluated on its own
     severe = f"{t['bp_severe_systolic']:g}/{t['bp_severe_diastolic']:g}"
     at = reading_time(first.created_at, tz)
+    minutes = BP_REPEAT_WAIT.seconds // 60
+    if first.symptoms == "no_reply":
+        subject, obj = SUBJECT.get(pronoun, "They"), OBJECT.get(pronoun, "them")
+        return Evaluation(
+            level="red",
+            rule="bp_severe_no_reply",
+            reason=f"BP {first.systolic}/{first.diastolic} at {at} was at or above the limit "
+            f"{whose} doctor set ({severe}). {subject} did not answer the warning-signs question "
+            f"and no repeat reading was taken within {minutes} minutes. Please call {obj} now.",
+        )
     return Evaluation(
         level="amber",
         rule="bp_severe_no_repeat",

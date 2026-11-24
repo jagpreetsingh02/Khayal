@@ -81,6 +81,10 @@ Show the simulator.
      doctor today."* plus an **Incoming call** card that reads the alert aloud.
    - (Shorter variant: answer **1** at the first question: RED at once, *"Please call 108 or 112
      now…"*.)
+   - (Silent-parent variant: after the first **1**, answer nothing and click **⏩ Skip 5
+     minutes** three times. No answer and no repeat within 15 minutes is **RED**: *"…She did not
+     answer the warning-signs question and no repeat reading was taken within 15 minutes.
+     Please call her now."* If she had answered **2**, a missing repeat would stay AMBER.)
 4. Dashboard (right): the red alert appears on **Overview** within a few seconds. Click
    **Trends** to show the spike above the doctor's band. Click **Alerts** → **I've seen this**.
 

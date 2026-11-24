@@ -22,6 +22,10 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   inbound dedup, per-member FIFO; signed sessions, codes, rate limits, MCP bearer, startup check,
   CSP; simulator mock-only, mypy 0, CI (3.11+3.13, dashboard, audit), Docker + Compose,
   `/health`. Details: README "Security", "Reliability", "Production readiness".
+- [x] **H5 silent parent** (`hardening-h5-silence`, tag `hardening-h5-done`): severe BP with
+  no answer to the warning-signs question (`no_reply`) and no confirmed repeat in 15 min =
+  RED `bp_severe_no_reply` ("…did not answer… Please call her now"), normal red path; answered
+  "no" + no repeat stays amber. `scripts/chat_demo.py` now answers the question ("2").
 - [x] **H4 clinical + MCP** (`hardening-h4-mcp`, tag `hardening-h4-done`): 2025 AHA/ACC
   warning-signs question at severe BP (yes = RED + 108/112; no / no reply 5 min (audited) =
   rest + repeat; asked again at the repeat; asymptomatic repeat = RED "Urgent: contact her
@@ -70,7 +74,7 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
 
 ## How to run (current)
 - Once: `cd dashboard && npm ci && npm run build` (Node 20.19+/22.12+). Backend: `cd backend && uv sync && uv run
-  python -m pytest` (607 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
+  python -m pytest` (614 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
   Local venv was moved from ~/Downloads/care-circle, so `.venv/bin/pytest` has a stale shebang:
   use `python -m pytest` (or `uv sync --reinstall` to fix the scripts).
 - **Demo: `uv run python ../scripts/start.py --seed`** -> http://localhost:8000/simulator and
@@ -151,6 +155,7 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   `init` writes mock secrets once; dev/aws startup check exits 1 on unsafe config.
 
 ## Session log (newest first, one line each)
+- 2026-11-24: Hardening H5 — silent parent at severe BP = red; 607 -> 614 tests.
 - 2026-11-24: Hardening H4 — clinical rules, MCP metadata, red-team suite (mutation-checked),
   manifest pin (same hash on 3.11/3.12/3.14), real-photo harness; start.py demo walked over
   HTTP (mock providers, scratch DB): read-back, severe → question → repeat → RED, refill

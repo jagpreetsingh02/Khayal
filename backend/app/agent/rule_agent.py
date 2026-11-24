@@ -56,7 +56,8 @@ class Agent(Protocol):
     def after_confirmed_reading(self, parent: Member, reading: Reading) -> ReadingOutcome: ...
 
     def after_missed_repeat(self, parent: Member, reading: Reading) -> ReadingOutcome:
-        """15 minutes after a first severe BP with no repeat: amber to the family."""
+        """15 minutes after a first severe BP with no repeat: amber to the family, or red
+        when the warning-signs question was never answered (the server decides)."""
         ...
 
     def after_missed_recheck(self, parent: Member, reading: Reading) -> ReadingOutcome:
