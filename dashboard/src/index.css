@@ -991,6 +991,17 @@ small {
   width: 3.4rem;
   color: var(--text-muted);
 }
+.plan-text {
+  width: 100%;
+  min-height: 5rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
 .check {
   display: flex;
   gap: 0.6rem;

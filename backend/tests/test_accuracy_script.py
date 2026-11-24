@@ -225,9 +225,10 @@ def test_csv_labels_cover_bp_glucose_units_and_hi_lo(tmp_path: Path):
     assert set(labels) == {"bp_1.jpg", "bp_2.jpg", "g_1.jpg", "g_2.jpg", "g_3.jpg"}
     assert labels["bp_1.jpg"].meter().pulse == 76 and labels["bp_2.jpg"].meter().pulse is None
     assert labels["g_2.jpg"].meter().glucose_unit == "mmol/L"
-    assert labels["g_3.jpg"].meter().display == "LO" and "display" in labels[
-        "g_3.jpg"
-    ].checked_fields()
+    assert (
+        labels["g_3.jpg"].meter().display == "LO"
+        and "display" in labels["g_3.jpg"].checked_fields()
+    )
     assert all(not lb.synthetic for lb in labels.values())
 
 

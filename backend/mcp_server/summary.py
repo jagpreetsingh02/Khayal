@@ -1,9 +1,8 @@
 """Descriptive weekly summary: numbers against doctor-set limits, nothing more."""
 
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-
 from statistics import mean
+from zoneinfo import ZoneInfo
 
 from app.alerts.thresholds import HOME_BP_REFERENCE, is_over_limit_bp
 from app.storage.models import Alert, DoseEvent, Member, Reading

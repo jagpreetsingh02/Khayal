@@ -313,8 +313,8 @@ def create_server(
 
     mcp = FastMCP(
         "khayal",
-        # Unknown arguments are refused, not ignored: a caller cannot slip in a recipient or
-        # a message body, and "10" is not quietly read as 10.
+        # Inputs are validated strictly against each tool's schema ("10" is not quietly read
+        # as 10). Unknown arguments, e.g. a recipient or a message body, are always refused.
         strict_input_validation=True,
         instructions=(
             "Khayal tools for one elderly parent (resolved from the sender). Log meter "

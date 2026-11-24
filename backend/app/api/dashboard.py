@@ -57,6 +57,7 @@ from app.storage.models import (
     Sharing,
     utcnow,
 )
+from app.storage.safe_text import PLAN_MAX, UnsafeTextError
 from app.voice import phrases
 
 TZ = ZoneInfo("Asia/Kolkata")
@@ -73,6 +74,8 @@ TOOL_CATEGORY: dict[str, ShareCategory] = {
     "request_refill": "medicines",
     "dashboard:acknowledge_alert": "alerts",
     "dashboard:update_thresholds": "readings",
+    "dashboard:update_care_plan": "readings",
+    "conversation:symptom_check": "readings",
     "dashboard:approve_refill": "medicines",
     "dashboard:reject_refill": "medicines",
     "pharmacy:demo_order": "medicines",
@@ -750,6 +753,46 @@ def put_thresholds(parent_id: str, body: ThresholdUpdate, request: Request, me: 
             {"saved": sorted(changed)},
         )
     return get_thresholds(parent_id, request, me)
+
+
+@router.get("/parents/{parent_id}/care-plan")
+def get_care_plan(parent_id: str, request: Request, me: Me):
+    """The doctor's plan for low sugar: sent to the parent word for word after a low reading
+    (Khayal never gives its own advice)."""
+    store = _store(request)
+    parent = _parent(store, me, parent_id)
+    _require(store, me, parent, "readings")
+    return {
+        "label": "Set by your doctor",
+        "low_sugar_plan": store.get_low_sugar_plan(parent.id),
+        "max_length": PLAN_MAX,
+        "fallback": tpl.NO_PLAN,
+    }
+
+
+class CarePlanUpdate(BaseModel):
+    low_sugar_plan: str | None = Field(default=None, max_length=PLAN_MAX)
+    doctor_confirmed: Literal[True]  # the family copies the doctor's words, as for limits
+
+
+@router.put("/parents/{parent_id}/care-plan")
+def put_care_plan(parent_id: str, body: CarePlanUpdate, request: Request, me: Me):
+    store = _store(request)
+    parent = _parent(store, me, parent_id)
+    _require(store, me, parent, "readings")
+    try:  # checked at write time: no links, phone numbers or instructions to a model
+        saved = store.set_low_sugar_plan(parent.id, (body.low_sugar_plan or "").strip() or None)
+    except UnsafeTextError as exc:
+        raise HTTPException(422, [str(exc)]) from exc
+    _audit(
+        store,
+        "member",
+        "dashboard:update_care_plan",
+        parent.id,
+        {"by": me.name, "doctor_confirmed": True},
+        {"low_sugar_plan_set": saved is not None},
+    )
+    return get_care_plan(parent_id, request, me)
 
 
 @router.get("/parents/{parent_id}/sharing")

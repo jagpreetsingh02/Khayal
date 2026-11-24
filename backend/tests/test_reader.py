@@ -19,11 +19,11 @@ from app.reader.labels import SAMPLES_DIR, load_labels
 from app.reader.mock_reader import MockReader
 from app.reader.schema import (
     METER_JSON_SCHEMA,
-    StripCandidate,
-    strip_json_schema,
     ImageInput,
     MeterReading,
+    StripCandidate,
     StripReading,
+    strip_json_schema,
 )
 
 FAKE_KEY = "gsk_test_not_a_real_key_0123456789"
@@ -252,9 +252,7 @@ def test_groq_reader_strip_returns_an_offered_id_only():
 
 def test_groq_reader_strip_free_text_is_refused():
     """A model that answers with OCR text (or an id we never offered) gets nothing through."""
-    leaked = json.dumps(
-        {"brand": "Telma", "medicine_id": "unknown", "legible": True, "issues": []}
-    )
+    leaked = json.dumps({"brand": "Telma", "medicine_id": "unknown", "legible": True, "issues": []})
     with pytest.raises(ReaderError):  # extra field -> invalid twice -> error, no values
         FakeGroq(chat(leaked), chat(leaked)).reader().read_strip(
             ImageInput(data=jpeg(800, 600)), CANDIDATES
