@@ -35,7 +35,14 @@ from app.reader.intake import build_reading
 from app.reader.schema import ImageInput
 from app.reader.strips import match_strip
 from app.storage.base import Store
-from app.storage.models import ConversationState, Medicine, Member, ReadingType, utcnow
+from app.storage.models import (
+    ConversationState,
+    Medicine,
+    Member,
+    OutboxMessage,
+    ReadingType,
+    utcnow,
+)
 from app.voice import phrases
 
 log = logging.getLogger(__name__)
@@ -79,11 +86,16 @@ class ConversationEngine:
         agent: Agent,
         *,
         clock: Callable[[], datetime] = utcnow,
+        drain_family: bool = True,
     ) -> None:
         self.store = store
         self.reader = reader
         self.agent = agent  # calls the MCP tools; family messages come back via store outbox
         self.clock = clock
+        # Standalone (tests, the CLI chat demo): family messages from the outbox are returned
+        # with the replies. Inside KhayalService (drain_family=False) the service claims,
+        # sends and retries them itself, so a failed send is never lost.
+        self.drain_family = drain_family
 
     # --- public API ---
 
@@ -104,7 +116,7 @@ class ConversationEngine:
             return [self._to(member, said, said.voice)]
         texts = self._handle_parent(member, msg, now)
         return [self._to(member, t, self._reply_voice(member, msg, t)) for t in texts] + (
-            self.drain_outbox()
+            self._family()
         )
 
     @staticmethod
@@ -126,17 +138,24 @@ class ConversationEngine:
         if member.consent_status != "granted":
             return []
         texts = self._due(member, now or self.clock())
-        return [self._to(member, t) for t in texts] + self.drain_outbox()
+        return [self._to(member, t) for t in texts] + self._family()
+
+    def members_with_timeouts(self) -> list[str]:
+        """Parents with a read-back or a repeat-BP wait that can time out."""
+        return [
+            s.member_id
+            for s in self.store.list_conversation_states()
+            if s.payload.get("expires_at") or s.payload.get("repeat")
+        ]
 
     def tick(self, now: datetime | None = None) -> list[Outgoing]:
         """Timeouts for every parent (run every ~30 s): unanswered read-backs expire, and a
         first severe BP without a repeat after 15 minutes sends amber to the family."""
         now = now or self.clock()
         out: list[Outgoing] = []
-        for state in self.store.list_conversation_states():
-            if state.payload.get("expires_at") or state.payload.get("repeat"):
-                out += self.expire_stale(state.member_id, now)
-        return out + self.drain_outbox()
+        for member_id in self.members_with_timeouts():
+            out += self.expire_stale(member_id, now)
+        return out + self._family()
 
     def dose_reminder(
         self, member_id: str, medicine_ids: list[str], hhmm: str | None = None
@@ -186,7 +205,7 @@ class ConversationEngine:
         self.store.set_conversation_state(
             state.model_copy(update={"payload": shift(state.payload)})
         )
-        return self.tick()
+        return self.expire_stale(member_id)  # this parent only; others keep their own timing
 
     # --- consent, stop, timeouts ---
 
@@ -570,20 +589,27 @@ class ConversationEngine:
             voice=voice,
         )
 
+    def _family(self) -> list[Outgoing]:
+        return self.drain_outbox() if self.drain_family else []
+
     def drain_outbox(self) -> list[Outgoing]:
-        """Messages the MCP server wrote for family members (it may be another process)."""
+        """Standalone use only (no channels): take every due outbox message and hand it to
+        the caller, which counts as delivery. The service delivers with retries instead."""
         out = []
-        for m in self.store.take_outbox():
-            member = self.store.get_member(m.member_id)
-            voice = Voice(text=m.voice_text, lang=m.voice_lang or "en") if m.voice_text else None
-            out.append(
-                Outgoing(
-                    channel=member.channel,
-                    to_ref=member.channel_ref,
-                    member_id=member.id,
-                    text=m.text,
-                    kind=m.kind,
-                    voice=voice,
-                )
-            )
+        for m in self.store.claim_outbox(self.clock(), timedelta(minutes=2)):
+            out.append(outbox_to_outgoing(m, self.store.get_member(m.member_id)))
+            self.store.mark_outbox_delivered(m.id)
         return out
+
+
+def outbox_to_outgoing(m: OutboxMessage, member: Member) -> Outgoing:
+    """An outbox row (written by the MCP server or the dashboard) as a channel message."""
+    voice = Voice(text=m.voice_text, lang=m.voice_lang or "en") if m.voice_text else None
+    return Outgoing(
+        channel=member.channel,
+        to_ref=member.channel_ref,
+        member_id=member.id,
+        text=m.text,
+        kind=m.kind,
+        voice=voice,
+    )

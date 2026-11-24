@@ -58,6 +58,8 @@ export interface Alert {
   at: string
   acknowledged_by: string | null
   acknowledged_at: string | null
+  // Family messages for this alert: pending = still being retried
+  delivery?: 'delivered' | 'pending' | 'failed' | null
 }
 
 export interface Refill {

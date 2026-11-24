@@ -24,4 +24,10 @@ class Channel(ABC):
 
     @abstractmethod
     def send(self, msg: Outgoing) -> None:
-        """Deliver one message to `msg.to_ref` on this channel."""
+        """Deliver one message to `msg.to_ref` on this channel. Returns only when the
+        channel accepted it; raises (e.g. ChannelError) otherwise, so it can be retried."""
+
+    def sender_of(self, event: Any) -> str | None:
+        """The sender's address in a raw event, without any network call (used to keep one
+        sender's messages in order before the event is fully received)."""
+        return getattr(event, "sender_ref", None)

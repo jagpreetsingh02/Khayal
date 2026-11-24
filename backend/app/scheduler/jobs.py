@@ -12,7 +12,7 @@ Every job is idempotent, so running it twice (or after a restart) never double-s
   told and approves on the dashboard; nothing here can approve). At most one try per medicine
   per day, and none while a refill is pending or was requested in the last 7 days.
 - Weekly summary: Sunday 19:00 IST, the `weekly_summary` tool's text to the family (only if
-  the parent shares readings).
+  the parent shares readings), written to the outbox like every family message.
 
 Only parents who have agreed (consent granted) get anything.
 """
@@ -30,7 +30,7 @@ from app.conversation import templates as tpl
 from app.conversation.engine import ConversationEngine
 from app.conversation.messages import Outgoing
 from app.storage.base import Store
-from app.storage.models import DoseEvent, Member, utcnow
+from app.storage.models import DoseEvent, Member, OutboxMessage, utcnow
 from app.voice import phrases
 
 log = logging.getLogger(__name__)
@@ -56,15 +56,22 @@ class Scheduler:
         now = now or utcnow()
         out: list[Outgoing] = []
         for parent in self.store.list_parents():
-            if parent.consent_status != "granted":
-                continue
-            try:
-                out += self.reminders(parent, now)
-                out += self.follow_ups(parent, now)
-                out += self.low_stock(parent, now)
-                out += self.weekly_summary(parent, now)
-            except Exception:  # one family's problem must not stop the others
-                log.exception("scheduler failed for parent %s", parent.id)
+            out += self.run_parent(parent, now)
+        return out
+
+    def run_parent(self, parent: Member, now: datetime) -> list[Outgoing]:
+        """Every job for one parent. The service runs this holding that parent's turn, so it
+        never interleaves with the parent's own messages."""
+        if parent.consent_status != "granted":
+            return []
+        out: list[Outgoing] = []
+        try:
+            out += self.reminders(parent, now)
+            out += self.follow_ups(parent, now)
+            out += self.low_stock(parent, now)
+            out += self.weekly_summary(parent, now)
+        except Exception:  # one family's problem must not stop the others
+            log.exception("scheduler failed for parent %s", parent.id)
         return out
 
     # --- reminders ---
@@ -192,14 +199,8 @@ class Scheduler:
             return []
         if not text:
             return []
-        out = []
+        # Family-facing, so it goes through the outbox (delivered with retries by the service).
         for child in self.store.list_members(parent.family_id, role="child"):
-            out.append(
-                Outgoing(
-                    channel=child.channel,
-                    to_ref=child.channel_ref,
-                    member_id=child.id,
-                    text=text,  # already headed "Weekly summary for <parent> (dates)"
-                )
-            )
-        return out
+            # text is already headed "Weekly summary for <parent> (dates)"
+            self.store.add_outbox(OutboxMessage(member_id=child.id, text=text))
+        return []

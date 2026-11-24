@@ -29,6 +29,16 @@ export function AlertItem({ alert, onChange }: { alert: Alert; onChange: () => v
         <time dateTime={alert.at} title={istWhen(alert.at)}>
           {istWhen(alert.at)} · {ago(alert.at)}
         </time>
+        {alert.delivery === 'pending' && (
+          <span className="chip chip-warn" title="Messages to the family are being retried">
+            Not delivered yet
+          </span>
+        )}
+        {alert.delivery === 'failed' && (
+          <span className="chip chip-bad" title="Sending to the family failed">
+            Not delivered
+          </span>
+        )}
       </div>
       <p className="alert-reason">{alert.reason}</p>
       {alert.acknowledged_at ? (

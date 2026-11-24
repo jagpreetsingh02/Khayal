@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import clock
 from app.api.simulator import router as simulator_router
+from app.channels.inbound import Inbound
 from app.channels.service import KhayalService, build_service
 from app.config import get_settings
 from app.demo import ensure_demo_family
@@ -43,6 +44,7 @@ def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         svc = app.state.service = service or build_service()
+        inbound = app.state.inbound = Inbound(svc)
         clock.sync_from(svc.store)  # keep the demo clock across restarts
         ensure_demo_family(svc.store)
         tasks = []
@@ -50,12 +52,13 @@ def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_
             tasks.append(asyncio.create_task(_ticker(svc, tick_seconds)))
         poller = getattr(svc.channels.get("telegram"), "start_polling", None)
         if poller and service is None and get_settings().telegram_mode == "polling":
-            tasks.append(asyncio.create_task(poller(svc)))
+            tasks.append(asyncio.create_task(poller(svc, inbound)))
         yield
         for task in tasks:
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
+        await inbound.drain()  # acknowledged messages still being processed
 
     app = FastAPI(title="Khayal", version="0.5.0", lifespan=lifespan)
     app.include_router(simulator_router)

@@ -220,8 +220,36 @@ class Store(ABC):
     def add_outbox(self, message: OutboxMessage) -> OutboxMessage: ...
 
     @abstractmethod
-    def take_outbox(self) -> list[OutboxMessage]:
-        """Return undelivered messages, oldest first, and mark them delivered."""
+    def claim_outbox(self, now: datetime, lease: timedelta, limit: int = 50) -> list[OutboxMessage]:
+        """Atomically claim up to `limit` undelivered messages that are due and not claimed by
+        anyone else (lease until now + lease), oldest first. Counts one attempt per message.
+        Two concurrent callers never get the same message."""
+
+    @abstractmethod
+    def mark_outbox_delivered(self, message_id: str, at: datetime | None = None) -> None:
+        """The channel accepted the message; it is never sent again."""
+
+    @abstractmethod
+    def mark_outbox_failed(
+        self,
+        message_id: str,
+        error: str,
+        next_attempt_at: datetime | None,
+        at: datetime | None = None,
+    ) -> None:
+        """The send failed: retry at `next_attempt_at`, or give up when it is None."""
+
+    @abstractmethod
+    def get_outbox(self, message_id: str) -> OutboxMessage: ...
+
+    @abstractmethod
+    def list_outbox(self, *, alert_id: str | None = None) -> list[OutboxMessage]:
+        """Oldest first; optionally only the messages of one alert."""
+
+    # --- inbound dedup (webhook retries, poller restarts) ---
+    @abstractmethod
+    def mark_inbound_seen(self, channel: str, external_id: str) -> bool:
+        """Record a channel's message id; True only the first time it is seen."""
 
     # --- audit ---
     @abstractmethod

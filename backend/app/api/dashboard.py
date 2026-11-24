@@ -164,6 +164,20 @@ def _reading(r: Reading) -> dict[str, Any]:
     }
 
 
+def _delivery(store: Store, alert_id: str) -> str | None:
+    """Did the alert's text messages reach the family? "delivered" (all), "pending" (some
+    still being retried), "failed" (some given up) or None (no tracked messages: older
+    alerts)."""
+    rows = [m for m in store.list_outbox(alert_id=alert_id) if m.kind == "message"]
+    if not rows:
+        return None
+    if all(m.delivered_at for m in rows):
+        return "delivered"
+    if any(m.delivered_at is None and m.gave_up_at is None for m in rows):
+        return "pending"
+    return "failed"
+
+
 def _alert(store: Store, a) -> dict[str, Any]:
     return {
         "id": a.id,
@@ -174,6 +188,7 @@ def _alert(store: Store, a) -> dict[str, Any]:
         "at": _iso(a.created_at),
         "acknowledged_by": _name(store, a.acknowledged_by),
         "acknowledged_at": _iso(a.acknowledged_at),
+        "delivery": _delivery(store, a.id),
     }
 
 
