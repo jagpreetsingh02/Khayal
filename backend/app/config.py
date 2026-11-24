@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Interface the MCP server binds to. Localhost by default; Docker Compose sets 0.0.0.0 for
     # the mcp container only (its port is never published; the bearer secret is still required).
     mcp_host: str = "127.0.0.1"
+    # Extra Host header names the MCP server accepts (comma separated). localhost, 127.0.0.1,
+    # ::1, the compose service name "mcp" and the host of MCP_SERVER_URL are always allowed.
+    mcp_allowed_hosts: str = ""
 
     groq_api_key: str = ""
     groq_vision_model: str = ""
