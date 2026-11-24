@@ -24,8 +24,10 @@ from app.storage.models import (
     Role,
     SetBy,
     Sharing,
+    SymptomAnswer,
     Threshold,
 )
+from app.storage.safe_text import PLAN_MAX, check_note
 
 
 class NotFoundError(LookupError):
@@ -92,6 +94,10 @@ class Store(ABC):
         """Oldest first."""
 
     @abstractmethod
+    def set_reading_symptoms(self, reading_id: str, answer: SymptomAnswer) -> Reading:
+        """Store the parent's own answer to the warning-signs question (server-side only)."""
+
+    @abstractmethod
     def set_reading_status(
         self, reading_id: str, status: ReadingStatus, at: datetime | None = None
     ) -> Reading:
@@ -113,6 +119,10 @@ class Store(ABC):
 
     @abstractmethod
     def set_medicine_times(self, medicine_id: str, times: list[str]) -> Medicine: ...
+
+    @abstractmethod
+    def set_medicine_note(self, medicine_id: str, note: str | None) -> Medicine:
+        """Short reminder label; checked like names (no links, numbers or instructions)."""
 
     @abstractmethod
     def set_medicine_stock(self, medicine_id: str, stock_count: int) -> Medicine: ...
@@ -142,6 +152,16 @@ class Store(ABC):
     @abstractmethod
     def incr_kv(self, key: str, by: int) -> int:
         """Add `by` to an integer counter and return the new value."""
+
+    # --- the doctor's plan for low sugar (entered by the family as "set by the doctor") ---
+    def get_low_sugar_plan(self, parent_id: str) -> str | None:
+        return self.get_kv(f"plan:low_sugar:{parent_id}") or None
+
+    def set_low_sugar_plan(self, parent_id: str, text: str | None) -> str | None:
+        """Checked at write time: it is repeated to the parent word for word."""
+        value = check_note(text, "Low sugar plan", PLAN_MAX) if text else ""
+        self.set_kv(f"plan:low_sugar:{parent_id}", value)
+        return value or None
 
     @abstractmethod
     def list_dose_events(

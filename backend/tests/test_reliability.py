@@ -288,12 +288,12 @@ def two_parents():
     store = SQLiteStore(":memory:")
     refs = ["+919800000101", "+919800000201"]
     for i, ref in enumerate(refs):
-        fam = store.add_family(Family(name=f"F{i}"))
+        fam = store.add_family(Family(name=f"Family {'AB'[i]}"))
         store.add_member(
             Member(
                 family_id=fam.id,
                 role="parent",
-                name=f"P{i}",
+                name=f"Parent {'AB'[i]}",
                 channel="simulator",
                 channel_ref=ref,
                 consent_status="granted",
