@@ -320,7 +320,11 @@ function renderHint(conv) {
   const hint = $("hint");
   const rep = conv.payload && conv.payload.repeat;
   let text = "";
-  if (conv.state === "awaiting_repeat" && rep) {
+  if (conv.state === "awaiting_symptoms") {
+    text = conv.payload && conv.payload.kind === "glucose"
+      ? "Low sugar question: 1 = yes (fainted / confused / needed help: RED to the family), 2 = no."
+      : "Warning-signs question: 1 = yes (RED now, told to call 108/112), 2 = no (rest and repeat). No reply in 5 minutes counts as no.";
+  } else if (conv.state === "awaiting_repeat" && rep) {
     const due = new Date(rep.due_at), amber = new Date(rep.amber_at), now = new Date();
     if (now < due) text = "Waiting for the repeat reading (due in 5 minutes). Use ⏩ Skip 5 minutes, then send the photo again.";
     else if (!rep.amber_done && now < amber) text = "Repeat reading can be sent now. With no repeat by 15 minutes, the family gets an amber alert.";

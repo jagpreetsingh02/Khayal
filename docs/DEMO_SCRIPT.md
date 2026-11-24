@@ -58,27 +58,35 @@ Show the simulator.
 > **Say:** "The AI reads the photo, but nothing is saved as confirmed until Lakshmi says yes. That's
 > checkpoint one: the parent. The vision call has no tools; text in a photo is only data."
 
-### 0:45 High BP → repeat → RED → family alert + call (50 s)
+### 0:45 High BP → warning-signs check → repeat → RED → family alert + call (55 s)
 
 1. Click **🖼️** → **bp high** → *"…I read 186/122, pulse 92 — correct?"* → click **1**.
-   Chat: *"…This is at or above the limit your doctor set. Please sit and rest for 5 minutes, then
-   measure again and send a photo of the new reading."* The children get nothing yet.
+   Chat: *"Saved: 186/122, pulse 92. This is at or above the limit your doctor set. Do you have
+   any of these right now: chest pain, breathlessness, weakness or numbness on one side or
+   slurred speech, severe headache, confusion, or sudden vision problems? Reply 1 yes / 2 no"*.
+   The children get nothing yet.
+2. Click **2** (no warning signs). Chat: *"Thank you. Please sit and rest for 5 minutes, then
+   measure again and send a photo of the new reading…"*
 
-> **Say:** "One very high reading can be a mistake, so following the guideline it asks for a
-> repeat after five minutes, and doesn't alarm the family yet."
+> **Say:** "Following the 2025 AHA guideline, the first thing it asks is about warning signs. A
+> 'yes' alerts the family at once and tells her to call 108. She says no, and one very high
+> reading can be a mistake, so it asks for a repeat after five minutes."
 
-2. Click **⏩ Skip 5 minutes**.
-3. Click **🖼️** → **bp high** → click **1**.
-   - Lakshmi: *"…The repeat reading is still at or above the limit your doctor set. I have told your
-     family. If you feel unwell, call 108/112."*
-   - Ravi and Priya: *"RED alert for Lakshmi Gowda: Repeat BP 186/122 is still at or above the
-     limit set by the doctor (180/120)…"* plus an **Incoming call** card that reads the alert aloud.
+3. Click **⏩ Skip 5 minutes**.
+4. Click **🖼️** → **bp high** → click **1** → the same question again → click **2**.
+   - Lakshmi: *"…The repeat reading is still at or above the limit your doctor set. I have told
+     your family. Please contact your doctor today. If any of those signs start, call 108/112."*
+   - Ravi and Priya: *"RED alert for Lakshmi Gowda: Repeat BP 186/122 at … is still at or above
+     the limit her doctor set (180/120). No warning signs were reported. Urgent: contact her
+     doctor today."* plus an **Incoming call** card that reads the alert aloud.
+   - (Shorter variant: answer **1** at the first question: RED at once, *"Please call 108 or 112
+     now…"*.)
 4. Dashboard (right): the red alert appears on **Overview** within a few seconds. Click
    **Trends** to show the spike above the doctor's band. Click **Alerts** → **I've seen this**.
 
-> **Say:** "The repeat is still severe, so the family gets a red alert and a phone call. The
-> limits come from Lakshmi's doctor, not from the AI, and the server re-checks them on every alert.
-> That's checkpoint two."
+> **Say:** "The repeat is still severe, so the family gets a red alert and a phone call: contact
+> her doctor today. The limits come from Lakshmi's doctor, not from the AI, and the server
+> re-checks them on every alert. That's checkpoint two."
 
 ### 1:35 Medicine strip → reminders → missed dose (45 s)
 

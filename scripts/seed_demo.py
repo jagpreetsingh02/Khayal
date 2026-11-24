@@ -208,7 +208,7 @@ def seed(store: Store, now: datetime | None = None, rng_seed: int = 7) -> dict[s
         r.status = "confirmed"
         r.confirmed_at = r.created_at + timedelta(minutes=rng.randint(1, 4))
         store.add_reading(r)
-        ev = evaluate_reading(r, confirmed, t)
+        ev = evaluate_reading(r, confirmed, t, parent.possessive)
         key = (ev.rule or "", r.created_at.astimezone(IST).date().isoformat())
         if ev.level != "none" and key not in alerted:  # one alert per rule per day
             alerted.add(key)
@@ -217,6 +217,7 @@ def seed(store: Store, now: datetime | None = None, rng_seed: int = 7) -> dict[s
                     parent_id=parent.id,
                     level=ev.level,
                     reason=ev.reason,
+                    rule=ev.rule,
                     reading_id=r.id,
                     notified_member_ids=[c.id for c in children],
                     created_at=r.confirmed_at,
