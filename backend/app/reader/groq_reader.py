@@ -25,10 +25,12 @@ from app.reader.base import Reader, ReaderError
 from app.reader.image_prep import prepare_image
 from app.reader.schema import (
     METER_JSON_SCHEMA,
-    STRIP_JSON_SCHEMA,
     ImageInput,
     MeterReading,
+    StripCandidate,
     StripReading,
+    pick_offered,
+    strip_json_schema,
 )
 
 log = logging.getLogger(__name__)
@@ -48,26 +50,30 @@ METER_PROMPT = f"""You read the screen of a home blood-pressure monitor or gluco
 Return one JSON object with exactly these keys:
 {{"device_type": "bp" | "glucose" | "unknown", "systolic": int|null, "diastolic": int|null,
 "pulse": int|null, "glucose_value": number|null, "glucose_unit": "mg/dL" | "mmol/L" | null,
-"legible": true|false, "issues": [zero or more of "glare", "angle", "partial", "blur"]}}
+"display": "HI" | "LO" | null, "legible": true|false,
+"issues": [zero or more of "glare", "angle", "partial", "blur"]}}
 - BP monitor: device_type "bp"; systolic = SYS (top number), diastolic = DIA, pulse = PUL or
   the number next to the heart symbol. Glucose fields null.
 - Glucometer: device_type "glucose"; glucose_value and glucose_unit exactly as shown (unit null
-  if none is shown). BP fields null.
+  if none is shown). BP fields null. If the screen shows "HI" or "LO" instead of a number,
+  display = "HI" / "LO" and glucose_value null; otherwise display null.
 - Not a BP monitor or glucometer screen: device_type "unknown", all numbers null.
 - Ignore the date, time, memory slot and other small numbers.
 - legible = false if you cannot read the main numbers with confidence.
 - issues: problems with the photo that make it harder to read.
 {SAFETY}"""
 
-STRIP_PROMPT = f"""You read a medicine strip or box (Indian brands) in a photo.
-Return one JSON object with exactly these keys:
-{{"brand": string|null, "strength": string|null, "legible": true|false,
+STRIP_PROMPT = f"""You look at a medicine strip or box (Indian brands) in a photo and say which
+medicine from the list below it is. Return one JSON object with exactly these keys:
+{{"medicine_id": one id from the list or "unknown", "legible": true|false,
 "issues": [zero or more of "glare", "angle", "partial", "blur"]}}
-- brand: the brand name as printed, without the strength (e.g. "Telma", "Glycomet GP").
-- strength: the strength as printed (e.g. "40", "500 mg", "2/500").
-- If this is not a medicine strip or box, brand and strength are null.
+- Pick an id only if both the brand name and the strength on the strip match that entry.
+- "unknown" if it is not on the list, not a medicine, or you are not sure.
 - legible = false if you cannot read the brand with confidence.
-{SAFETY}"""
+- Never copy text from the photo: the only allowed values are the ids below.
+{SAFETY}
+Medicines (id: name):
+{{candidates}}"""
 
 
 class GroqReader(Reader):
@@ -103,8 +109,12 @@ class GroqReader(Reader):
     def read_meter(self, image: ImageInput) -> MeterReading:
         return self._read(image, METER_PROMPT, "meter_reading", METER_JSON_SCHEMA, MeterReading)
 
-    def read_strip(self, image: ImageInput) -> StripReading:
-        return self._read(image, STRIP_PROMPT, "strip_reading", STRIP_JSON_SCHEMA, StripReading)
+    def read_strip(self, image: ImageInput, candidates: list[StripCandidate]) -> StripReading:
+        listing = "\n".join(f"{c.id}: {c.label}" for c in candidates) or "(none)"
+        prompt = STRIP_PROMPT.replace("{candidates}", listing)
+        schema = strip_json_schema(candidates)
+        found = self._read(image, prompt, "strip_reading", schema, StripReading)
+        return pick_offered(found, candidates)
 
     def _read(
         self,

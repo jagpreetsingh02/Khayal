@@ -55,6 +55,7 @@ def seed(store: Store, now: datetime | None = None, rng_seed: int = 7) -> dict[s
             channel="simulator",
             channel_ref=PARENT_REF,
             language="en",
+            pronoun="she",  # family texts: "the limit her doctor set"
             consent_status="granted",
             consent_at=consent_at,
         )
