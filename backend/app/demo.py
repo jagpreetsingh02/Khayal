@@ -28,6 +28,7 @@ def seed_fresh_family(store: Store) -> Member:
             channel="simulator",
             channel_ref=PARENT_REF,
             language="en",
+            pronoun="she",  # family texts: "the limit her doctor set"
         )
     )
     for name, ref in CHILDREN:

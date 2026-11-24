@@ -4,6 +4,8 @@
   `alert_family` tool (which re-checks everything server-side). A first severe BP alerts
   nobody: the conversation asks for a repeat instead.
 - no repeat within 15 minutes of a first severe BP: `alert_family` amber.
+- no recheck within 15 minutes of a low (54-69) sugar: `alert_family` amber.
+- `alert_family` takes no free text: the server writes every family message itself.
 - confirmed medicine strip: `create_reminder`.
 
 Every tool call goes through a real MCP client to the Khayal MCP server over
@@ -55,6 +57,10 @@ class Agent(Protocol):
 
     def after_missed_repeat(self, parent: Member, reading: Reading) -> ReadingOutcome:
         """15 minutes after a first severe BP with no repeat: amber to the family."""
+        ...
+
+    def after_missed_recheck(self, parent: Member, reading: Reading) -> ReadingOutcome:
+        """15 minutes after a low (54-69) sugar with no recheck: amber to the family."""
         ...
 
     def set_reminder(self, parent: Member, medicine_id: str, times: list[str]) -> list[str]:
@@ -111,10 +117,8 @@ class RuleAgent:
 
         return run_sync(tools)
 
-    def _alert(
-        self, parent: Member, reading: Reading, outcome: ReadingOutcome, reason: str
-    ) -> ReadingOutcome:
-        args = {"level": outcome.level, "reason": reason, "reading_id": reading.id}
+    def _alert(self, parent: Member, reading: Reading, outcome: ReadingOutcome) -> ReadingOutcome:
+        args = {"level": outcome.level, "reading_id": reading.id}
         try:
             result = self.call_tool(parent, "alert_family", args)
         except Exception:  # the parent still gets an honest reply; the failure is logged
@@ -136,22 +140,22 @@ class RuleAgent:
         )
         if evaluation.level == "none":  # includes a first severe BP: ask for a repeat
             return outcome
-        return self._alert(parent, reading, outcome, evaluation.reason)
+        return self._alert(parent, reading, outcome)
 
     def after_missed_repeat(self, parent: Member, reading: Reading) -> ReadingOutcome:
         outcome = ReadingOutcome(level="amber", rule="bp_severe_no_repeat")
-        return self._alert(parent, reading, outcome, "No repeat BP reading within 15 minutes.")
+        return self._alert(parent, reading, outcome)
+
+    def after_missed_recheck(self, parent: Member, reading: Reading) -> ReadingOutcome:
+        outcome = ReadingOutcome(level="amber", rule="glucose_low_no_recheck")
+        return self._alert(parent, reading, outcome)
 
     def after_missed_doses(self, parent: Member) -> ReadingOutcome:
         """Scheduler: doses were marked missed today; the server checks the doctor-set count
         (2+ by default) and sends AMBER at most once a day."""
         outcome = ReadingOutcome(level="amber", rule="missed_doses_per_day")
         try:
-            result = self.call_tool(
-                parent,
-                "alert_family",
-                {"level": "amber", "reason": "Medicine reminders marked missed today."},
-            )
+            result = self.call_tool(parent, "alert_family", {"level": "amber"})
         except Exception as exc:  # below the limit -> ToolError "no limit ... crossed"
             log.info("missed-doses alert not sent for %s: %s", parent.id, exc)
             outcome.level = "none"

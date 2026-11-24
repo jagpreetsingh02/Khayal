@@ -12,6 +12,7 @@ from app.conversation.engine import (
     AWAITING_CONFIRMATION,
     AWAITING_MED_TIME,
     AWAITING_REPEAT,
+    AWAITING_SYMPTOMS,
     AWAITING_VALUE,
     IDLE,
     ConversationEngine,
@@ -118,7 +119,8 @@ class SpyReader(Reader):
             raise ReaderError("boom")
         return self.meter or MeterReading(device_type="unknown", legible=False)
 
-    def read_strip(self, image):
+    def read_strip(self, image, candidates):
+        self.candidates = candidates
         self.calls += 1
         if self.error:
             raise ReaderError("boom")
@@ -336,8 +338,10 @@ def test_repeat_bp_flow_ends_in_red_alert(w):
     w.say(photo="synthetic_bp_high.jpg")
     out = w.send("1")
     [ask] = w.to_parent(out)
-    assert ask == tpl.REPEAT_ASK.format(value="186/122, pulse 92")
+    assert ask == tpl.SYMPTOM_CHECK_BP.format(value="186/122, pulse 92")
     assert w.to_family(out) == []  # first severe reading: nobody is alerted yet
+    assert w.state.state == AWAITING_SYMPTOMS
+    assert w.say("2") == tpl.REPEAT_ASK  # no warning signs: rest and repeat
     assert w.store.list_alerts(w.parent.id) == []
     assert w.state.state == AWAITING_REPEAT
 
@@ -348,12 +352,17 @@ def test_repeat_bp_flow_ends_in_red_alert(w):
     w.clock.advance(4)  # 6 minutes after the first reading
     assert w.say(photo="synthetic_bp_high.jpg").startswith("I read 186/122")
     out = w.send("1")
+    assert w.to_parent(out) == [tpl.SYMPTOM_CHECK_BP_REPEAT.format(value="186/122, pulse 92")]
+    assert w.to_family(out) == []  # the question is asked again at the repeat
+    out = w.send("2")
     [reply] = w.to_parent(out)
-    assert reply.startswith(tpl.RED_REPEAT.format(value="186/122, pulse 92"))
-    assert "I have told your family." in reply and tpl.EMERGENCY in reply
+    assert reply == tpl.RED_REPEAT_URGENT.format(
+        value="186/122, pulse 92", family="I have told your family."
+    )
     family = w.to_family(out)
     assert len(family) == 2 and all(t.startswith("RED alert for Lakshmi") for t in family)
-    assert all("108/112" in t for t in family)
+    # asymptomatic repeat: "contact the doctor today", never ambulance wording for the family
+    assert all("Urgent: contact their doctor today." in t and "108" not in t for t in family)
     assert [a.level for a in w.store.list_alerts(w.parent.id)] == ["red"]
     assert w.state.state == IDLE
     assert w.engine.tick() == []  # repeat done: no amber later
@@ -366,6 +375,7 @@ def test_repeat_bp_flow_ends_in_red_alert(w):
 def test_repeat_bp_back_below_limit_is_not_red(w):
     w.say(photo="synthetic_bp_high.jpg")
     w.say("1")
+    w.say("2")  # no warning signs
     w.clock.advance(6)
     w.say(photo="synthetic_bp_normal.jpg")
     assert w.say("1") == tpl.REPEAT_OK.format(value="132/84, pulse 74")
@@ -378,6 +388,7 @@ def test_repeat_bp_back_below_limit_is_not_red(w):
 def test_no_repeat_in_15_minutes_sends_amber_to_family(w):
     w.say(photo="synthetic_bp_high.jpg")
     w.say("1")
+    w.say("2")  # no warning signs
     w.clock.advance(14)
     assert w.engine.tick() == []
     w.clock.advance(2)
@@ -395,7 +406,8 @@ def test_no_repeat_in_15_minutes_sends_amber_to_family(w):
 
     w.clock.advance(4)  # 20 minutes after the first: still severe -> red
     w.say(photo="synthetic_bp_high.jpg")
-    out = w.send("1")
+    w.say("1")
+    out = w.send("2")
     assert all(t.startswith("RED alert for Lakshmi") for t in w.to_family(out))
     assert sorted(a.level for a in w.store.list_alerts(w.parent.id)) == ["amber", "red"]
 
@@ -403,6 +415,7 @@ def test_no_repeat_in_15_minutes_sends_amber_to_family(w):
 def test_no_repeat_amber_also_fires_on_the_next_message(w):
     w.say(photo="synthetic_bp_high.jpg")
     w.say("1")
+    w.say("2")  # no warning signs
     w.clock.advance(16)
     out = w.send("hello")
     assert w.to_parent(out)[0] == tpl.NO_REPEAT_FAMILY_TOLD.format(value="186/122, pulse 92")
@@ -412,6 +425,7 @@ def test_no_repeat_amber_also_fires_on_the_next_message(w):
 def test_no_amber_while_the_repeat_is_being_read_back(w):
     w.say(photo="synthetic_bp_high.jpg")
     w.say("1")
+    w.say("2")  # no warning signs
     w.clock.advance(14)
     w.say(photo="synthetic_bp_normal.jpg")  # repeat arrives at 14 min, not yet confirmed
     w.clock.advance(2)
@@ -425,6 +439,7 @@ def test_no_amber_while_the_repeat_is_being_read_back(w):
 def test_stop_during_repeat_wait_cancels_the_amber(w):
     w.say(photo="synthetic_bp_high.jpg")
     w.say("1")
+    w.say("2")  # no warning signs
     w.say("STOP")
     w.clock.advance(16)
     assert w.engine.tick() == []
@@ -452,9 +467,12 @@ def test_paused_parent_cannot_log_anything(w):
 def test_repeat_window_closes_after_an_hour(w):
     w.say(photo="synthetic_bp_high.jpg")
     w.say("1")
+    w.say("2")  # no warning signs
     w.clock.advance(61)
     w.say(photo="synthetic_bp_high.jpg")
-    assert w.say("1").startswith("Saved: 186/122")  # a new first reading: ask for repeat again
+    assert w.say("1").startswith("Saved: 186/122")  # a new first reading: asked again
+    assert w.state.state == AWAITING_SYMPTOMS
+    assert w.say("2") == tpl.REPEAT_ASK
     assert w.state.state == AWAITING_REPEAT
     assert "red" not in [a.level for a in w.store.list_alerts(w.parent.id)]
 
@@ -462,6 +480,7 @@ def test_repeat_window_closes_after_an_hour(w):
 def test_glucose_reading_during_repeat_wait_keeps_the_repeat(w):
     w.say(photo="synthetic_bp_high.jpg")
     w.say("1")
+    w.say("2")  # no warning signs
     w.clock.advance(1)
     w.say(photo="synthetic_glucose_mgdl.jpg")  # not a BP: read normally, no "too soon"
     assert w.say("1") == tpl.SAVED.format(value="sugar 112 mg/dL")
@@ -471,8 +490,10 @@ def test_glucose_reading_during_repeat_wait_keeps_the_repeat(w):
 def test_low_glucose_is_red_with_emergency_line(w):
     w.say("sugar 45")
     out = w.send("1")
-    [reply] = w.to_parent(out)
+    reply, question = w.to_parent(out)
     assert "I have told your family." in reply and tpl.EMERGENCY in reply
+    assert tpl.NO_PLAN in reply  # no doctor's plan on file: never Khayal's own advice
+    assert question == tpl.LOW_SUGAR_QUESTION
     assert all(t.startswith("RED alert") for t in w.to_family(out))
 
 
@@ -551,8 +572,15 @@ def test_strip_confirms_existing_medicine_and_keeps_its_times(w):
 
 
 def test_strip_not_in_list_is_not_guessed():
-    w = World(reader=SpyReader(strip=StripReading(brand="Crocin", strength="500", legible=True)))
-    assert w.say("medicine", photo="x.jpg") == tpl.STRIP_UNKNOWN.format(seen="Crocin 500")
+    w = World(reader=SpyReader(strip=StripReading(medicine_id="unknown", legible=True)))
+    assert w.say("medicine", photo="x.jpg") == tpl.STRIP_UNKNOWN
+    assert w.state.state == IDLE
+
+
+def test_strip_id_that_was_not_offered_is_unknown():
+    spy = SpyReader(strip=StripReading(medicine_id="cat:not-offered", legible=True))
+    w = World(reader=spy)
+    assert w.say("medicine", photo="x.jpg") == tpl.STRIP_UNKNOWN
     assert w.state.state == IDLE
 
 
@@ -562,10 +590,12 @@ def test_strip_unreadable():
 
 
 def test_caption_routes_straight_to_the_strip_reader():
-    spy = SpyReader(strip=StripReading(brand="Glycomet", strength="500", legible=True))
+    spy = SpyReader(strip=StripReading(medicine_id="cat:glycomet-500", legible=True))
     w = World(reader=spy)
     assert w.say("my medicine", photo="x.jpg").startswith("Glycomet 500 = Metformin 500 mg")
     assert spy.calls == 1  # no meter read first
+    # the reader was offered ids + names from our own list, nothing from the photo
+    assert any(c.id == "cat:glycomet-500" for c in spy.candidates)
 
 
 # --- dose replies ---

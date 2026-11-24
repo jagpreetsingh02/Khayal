@@ -41,15 +41,16 @@ def test_glucose_range(value, ok):
     "s,d,pulse,ok",
     [
         (120, 80, 72, True),
-        (69, 50, None, False),  # systolic too low
-        (251, 100, None, False),  # systolic too high
-        (120, 39, None, False),  # diastolic too low
-        (200, 151, None, False),  # diastolic too high
+        (59, 40, None, False),  # systolic too low
+        (261, 100, None, False),  # systolic too high
+        (120, 29, None, False),  # diastolic too low
+        (220, 161, None, False),  # diastolic too high
         (90, 90, None, False),  # systolic must exceed diastolic
         (80, 95, None, False),  # swapped digits
         (120, 80, 29, False),  # pulse too low
         (120, 80, 201, False),  # pulse too high
-        (70, 40, 30, True),  # inclusive bounds
+        (60, 30, 30, True),  # inclusive bounds
+        (260, 160, 200, True),
     ],
 )
 def test_bp_rules(s, d, pulse, ok):
@@ -104,8 +105,9 @@ def test_glucose_thresholds(mgdl, level):
     assert evaluate_glucose(mgdl, T).level == level
 
 
-def test_red_glucose_mentions_emergency_numbers():
-    assert "108/112" in evaluate_glucose(45, T).reason
+def test_red_glucose_tells_the_family_to_call():
+    reason = evaluate_glucose(45, T, whose="her").reason
+    assert "below the limit her doctor set (54)" in reason and "Please call now." in reason
 
 
 def test_first_severe_bp_alerts_nobody_and_asks_for_repeat():
@@ -116,8 +118,10 @@ def test_first_severe_bp_alerts_nobody_and_asks_for_repeat():
 
 def test_repeat_severe_bp_after_5_minutes_is_red():
     first = bp(184, 98, minutes_ago=6)
-    ev = evaluate_reading(bp(181, 97), [first], T)
-    assert ev.level == "red" and "108/112" in ev.reason
+    ev = evaluate_reading(bp(181, 97), [first], T, whose="her")
+    assert ev.level == "red" and ev.rule == "bp_severe_repeat"
+    # asymptomatic repeat: urgent doctor contact, no ambulance wording for the family
+    assert "Urgent: contact her doctor today." in ev.reason and "108" not in ev.reason
 
 
 def test_repeat_too_soon_or_too_late_is_a_new_first_reading():

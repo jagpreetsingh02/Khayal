@@ -76,7 +76,10 @@ def test_golden_path_in_mock_mode(sim):
     assert s["parent"]["feed"][-2]["photo"] and s["parent"]["feed"][-2]["sample"]
 
     s = say(sim, "1")
-    assert last_reply(s) == tpl.REPEAT_ASK.format(value="186/122, pulse 92")
+    assert last_reply(s) == tpl.SYMPTOM_CHECK_BP.format(value="186/122, pulse 92")
+    assert s["conversation"]["state"] == "awaiting_symptoms"
+    s = say(sim, "2")  # no warning signs
+    assert last_reply(s) == tpl.REPEAT_ASK
     assert child_texts(s) == [[], []]  # first severe reading: family not alerted
     assert s["conversation"]["state"] == "awaiting_repeat"
 
@@ -84,7 +87,9 @@ def test_golden_path_in_mock_mode(sim):
     s = say(sim, sample="synthetic_bp_high.jpg")
     assert last_reply(s).startswith("I read 186/122")
     s = say(sim, "1")
-    assert last_reply(s).startswith(tpl.RED_REPEAT.format(value="186/122, pulse 92"))
+    assert last_reply(s) == tpl.SYMPTOM_CHECK_BP_REPEAT.format(value="186/122, pulse 92")
+    s = say(sim, "2")
+    assert last_reply(s).startswith("Saved: 186/122, pulse 92. The repeat reading is still")
     for texts in child_texts(s):
         assert len(texts) == 1 and texts[0].startswith("RED alert for Lakshmi Gowda")
     assert "alert_family" in tools_called(s)

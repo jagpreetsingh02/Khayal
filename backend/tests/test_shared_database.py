@@ -48,9 +48,11 @@ def test_alert_written_by_the_mcp_process_shows_on_the_dashboard(tmp_path, monke
 
             say(sample="synthetic_bp_high.jpg")
             say(text="1")
+            say(text="2")  # no warning signs
             assert c.post("/simulator/api/skip", json={"minutes": 5}).status_code == 200
             say(sample="synthetic_bp_high.jpg")
             say(text="1")
+            say(text="2")
             session = c.post("/api/login", json={"token": TOKEN, "member_id": ravi.id})
             headers = {"Authorization": f"Bearer {session.json()['session']}"}
             assert c.get("/health").json()["mcp"] == "reachable"

@@ -238,6 +238,7 @@ def test_two_missed_doses_send_one_amber_alert(w):
     assert amber == [
         "AMBER alert for Lakshmi: 2 medicine reminders were marked missed on "
         + set_clock("08:30").strftime("%d %b")
+        + ", at or above the limit their doctor set (2 a day)"
         + "."
     ]
     set_clock("20:00")

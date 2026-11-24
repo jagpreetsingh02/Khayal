@@ -280,9 +280,11 @@ def test_red_alert_reaches_children_in_chat_when_alerts_not_shared(dash):
 
     say(sample="synthetic_bp_high.jpg")
     say(text="1")
+    say(text="2")  # no warning signs
     dash.c.post("/simulator/api/skip", json={"minutes": 5})
     say(sample="synthetic_bp_high.jpg")
-    reply = say(text="1")
+    say(text="1")
+    reply = say(text="2")
     assert "I have told your family" in reply
     assert any("RED alert" in t for t in dash.feed(dash.ravi))
     assert any("RED alert" in t for t in dash.feed(dash.priya))
@@ -435,11 +437,13 @@ def test_readme_golden_path_on_seeded_data(dash):
     h, pid = dash.login(dash.ravi), dash.parent.id
     assert "186/122" in say(sample="synthetic_bp_high.jpg")
     say("1")
+    say("2")  # no warning signs: rest and repeat
     first = dash.c.get("/api/alerts?days=1", headers=h).json()["alerts"]
     assert not any(a["level"] == "red" for a in first)  # first severe BP: nobody alerted
     dash.c.post("/simulator/api/skip", json={"minutes": 5})
     say(sample="synthetic_bp_high.jpg")
     say("1")
+    say("2")
     [red] = [
         a
         for a in dash.c.get("/api/alerts?days=1", headers=h).json()["alerts"]
@@ -462,7 +466,7 @@ def test_readme_golden_path_on_seeded_data(dash):
     dash.c.post(f"/api/refills/{refill['id']}/approve", headers=h)
     assert "your pharmacy will confirm" in dash.feed(dash.parent)[-1]
     assert dash.c.get("/api/audit", headers=h).json()["stats"]["ai_approve_calls"] == 0
-    assert red["reason"].endswith("call 108/112.")
+    assert red["reason"].endswith("Urgent: contact her doctor today.")
 
 
 def test_demo_parent_gets_indian_english_voice_notes():
