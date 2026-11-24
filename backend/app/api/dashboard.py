@@ -42,7 +42,7 @@ from app.api.login_codes import find_member, issue_code, verify_code
 from app.channels.service import KhayalService
 from app.config import get_settings
 from app.conversation import templates as tpl
-from app.demo import ensure_demo_family
+from app.demo import PARENT_REF, ensure_demo_family
 from app.pharmacy import DEMO_LABEL, DemoPharmacy
 from app.storage import ConflictError, NotFoundError, Store
 from app.storage.models import (
@@ -314,16 +314,33 @@ def _signed_in(request: Request, member: Member, method: str) -> dict[str, Any]:
 
 
 @public.get("/login/hint")
-def login_hint() -> dict[str, Any]:
-    """What the login page offers: code sign-in always; the demo token only in mock mode."""
+def login_hint(request: Request) -> dict[str, Any]:
+    """What the login page offers: code sign-in always; the demo token only in mock mode.
+    With the public default token (mock demo) it also lists the demo family, so the code
+    path can be tried by tapping a name: that token already shows the same list."""
     s = get_settings()
     demo = demo_login_enabled()
+    default_token = demo and s.dashboard_demo_token == "change-me"
+    members: list[dict[str, str]] = []
+    parent = _store(request).find_member_by_channel("simulator", PARENT_REF)
+    if default_token and parent is not None:
+        members = _member_choices(_store(request), parent.family_id)
     return {
         "mode": s.app_mode,
         "demo_login": demo,
         "code_login": True,
-        "default_token": demo and s.dashboard_demo_token == "change-me",
+        "default_token": default_token,
+        "demo_members": members,
     }
+
+
+def _member_choices(store: Store, family_id: str) -> list[dict[str, str]]:
+    order = {"child": 0, "parent": 1}
+    members = store.list_members(family_id)
+    return [
+        {"id": m.id, "name": m.name, "role": m.role}
+        for m in sorted(members, key=lambda m: (order[m.role], m.name))
+    ]
 
 
 def _demo_login_or_403() -> None:
@@ -340,14 +357,9 @@ def login_members(body: TokenBody, request: Request) -> dict[str, Any]:
         raise HTTPException(401, "Wrong demo token.")
     store = _store(request)
     parent = ensure_demo_family(store)
-    members = store.list_members(parent.family_id)
-    order = {"child": 0, "parent": 1}
     return {
         "family": store.get_family(parent.family_id).name,
-        "members": [
-            {"id": m.id, "name": m.name, "role": m.role}
-            for m in sorted(members, key=lambda m: (order[m.role], m.name))
-        ],
+        "members": _member_choices(store, parent.family_id),
     }
 
 

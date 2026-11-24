@@ -349,7 +349,17 @@ def test_demo_token_login_refused_in_dev_mode(dev_app):
 def test_mock_mode_offers_both_logins(app):
     hint = app.c.get("/api/login/hint").json()
     assert hint == {"mode": "mock", "demo_login": True, "code_login": True,
-                    "default_token": False}  # fmt: skip
+                    "default_token": False, "demo_members": []}  # fmt: skip
+
+
+def test_hint_lists_demo_members_only_with_the_public_default_token(app, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_DEMO_TOKEN", "change-me")
+    get_settings.cache_clear()
+    names = [m["name"] for m in app.c.get("/api/login/hint").json()["demo_members"]]
+    assert names == ["Priya Gowda", "Ravi Gowda", "Lakshmi Gowda"]
+    monkeypatch.setenv("APP_MODE", "dev")
+    get_settings.cache_clear()
+    assert app.c.get("/api/login/hint").json()["demo_members"] == []
 
 
 # ---------- security headers, docs ----------

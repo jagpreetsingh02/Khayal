@@ -53,6 +53,14 @@ function summarize(row: AuditRow): string {
       return `${a.by} changed what the family can see.`
     case 'dashboard:acknowledge_alert':
       return `${a.by} marked an alert as seen.`
+    case 'dashboard:login':
+      return `Signed in (${a.method === 'code' ? 'one-time code' : 'demo token'}).`
+    case 'dashboard:login_failed':
+      return `Failed sign-in attempt (${a.method === 'code' ? 'wrong or expired code' : 'wrong demo token'}).`
+    case 'dashboard:login_code_requested':
+      return 'A sign-in code was requested.'
+    case 'dashboard:logout':
+      return 'Signed out (all devices).'
     default:
       return row.tool
   }
@@ -62,6 +70,7 @@ const ACTOR = {
   agent: { label: 'AI via MCP', icon: 'bot' },
   member: { label: 'Family', icon: 'user' },
   system: { label: 'System', icon: 'gear' },
+  unknown: { label: 'Sign-in', icon: 'lock' },
 } as const
 
 function Entry({ row }: { row: AuditRow }) {
