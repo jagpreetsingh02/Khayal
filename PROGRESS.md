@@ -1,19 +1,28 @@
 # PROGRESS — Khayal (read this first every session)
 
-Deadline: **24 Nov 2026, 11:59 PM IST** — PPT + video + GitHub repo link on Devnovate.
+Submitted 24 Nov 2026 (Devnovate). Repo changes allowed until **26 Nov 2026**; pitch after.
 Spec: `docs/PROJECT_BRIEF.md` (read only the sections you need). Rules: `CLAUDE.md`.
 Repo: https://github.com/jagpreetsingh02/khayal (public)
 
 ## Current status
-- Current phase: **Phase 6 — polish + AWS design: DONE** (branch `phase-6-polish-aws`, merged to
-  `main`, tag `phase-6-done`). No AWS resource created; nothing deployed.
-- Current branch: `main` (chore `chore/demo-karnataka-names` merged, tag `demo-karnataka-names-done`)
-- Next step: **submission support only** (deadline 24 Nov). Optional small chunks, each on its own
-  branch: (a) score the 6 unscored glucose images once Groq's daily quota resets (~13k tokens,
-  command in `samples/generated_medical_test_images_jpg/README.md`) and update README numbers;
-  (b) real Indian-device photos into `samples/` + accuracy run; (c) AWS deploy only if the user
-  approves paid resources (design in `docs/AWS_ARCHITECTURE.md`).
-- Optional, still open: LLM agent via Groq tool calling behind `AGENT=rules|llm`.
+- Submission (Phase 1 of judging) is in: tag **`submission-phase1`** = the exact submitted
+  commit. Repo may change until **26 Nov 2026**; `main` must stay demo-ready for the pitch.
+- Current work stream: **Hardening** (below). H1 done and merged (tag `hardening-h1-done`).
+- Current branch: `main`
+- **Next step: H2 (security)** on branch `hardening-h2-security` (scope to be given by the user).
+
+## Hardening (production) — one branch per phase, merged with --no-ff, tagged when done
+- [x] **H1 safety bugs** (`hardening-h1-safety`, tag `hardening-h1-done`): outbox claim/lease
+  + retries (30 s, 1 m, 2 m, 5 m, then 10 m; red alert messages forever, others stop at 8;
+  final + red failures -> audit `delivery_failed` + ERROR log); weekly summary via outbox;
+  dashboard "Not delivered yet"; inbound dedup (`inbound_seen`: Twilio MessageSid, Telegram
+  update_id, webhook + polling); webhooks ack then process in background; per-member FIFO
+  turns (`app/channels/turns.py`) replace the global lock.
+  **Known gap:** crash between webhook ack and end of processing loses that message (id
+  already recorded; channel won't resend). Durable inbox = future work. Proactive *parent*
+  messages (reminders, follow-ups, low-stock note) are still sent directly, not retried.
+- [ ] **H2 security** (`hardening-h2-security`)
+- [ ] **H3 types, CI, Docker** (`hardening-h3-ci`)
 
 ## Phase checklist
 - [x] Phase 0 — setup · [x] Phase 1 — MCP core + storage · [x] Phase 2 — reader + read-back
@@ -44,7 +53,9 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 
 ## How to run (current)
 - Once: `cd dashboard && npm ci && npm run build` (Node 20.19+/22.12+). Backend: `cd backend && uv sync && uv run
-  pytest` (391 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
+  python -m pytest` (409 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
+  Local venv was moved from ~/Downloads/care-circle, so `.venv/bin/pytest` has a stale shebang:
+  use `python -m pytest` (or `uv sync --reinstall` to fix the scripts).
 - **Demo: `uv run python ../scripts/start.py --seed`** -> http://localhost:8000/simulator and
   /dashboard/ (token `change-me`). Simulator: ⏰ Next reminder / ⏩ 30 min / ⏩ 1 day (demo clock),
   📊 Weekly summary, 🗣️ sample voice notes, 🎤 recorder, ⏩ Skip 5 minutes, Reset demo.
@@ -79,6 +90,10 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
   `app/conversation/*` (`parse.normalize_speech`, `engine.Said`), agent `app/agent/rule_agent.py`,
   channels `app/channels/*` (`service.run_scheduler/advance_time/deliver`), APIs `app/api/*`.
 - Guardrail gotcha: `alert_family` reasons must avoid blocked words (e.g. "dose", "doses").
+- Delivery: `Channel.send` must raise on failure (Twilio raises outside the 24 h window w/o
+  template, so the outbox retries). Engine standalone (`drain_family=True`: tests, chat_demo)
+  marks outbox rows delivered when returned; inside the service it never touches the outbox.
+  SQLite 3.50 (`UPDATE ... RETURNING` for claims). Calls: `CallProvider.can_call(member)`.
 
 ## Decisions log
 - 2026-11-22 (Ph 0-3): mock-first, SQLite now; Groq dev / Bedrock AWS; no AI attribution; no
@@ -117,31 +132,18 @@ Repo: https://github.com/jagpreetsingh02/khayal (public)
 - 2026-11-23: Product name is **Khayal** (was Care Circle); old commit messages and tags keep
   the old name (history not rewritten). No CARE_CIRCLE env vars existed; only the DB default changed.
 
+- 2026-11-24 (H1): red retry-forever applies to alert *text* messages; red voice calls stop at
+  8 attempts (hours of repeated calls is worse than a retried text). Background ticker /
+  scheduler skip a parent who is busy (retry next 30 s pass); demo buttons wait their turn.
+  Outbox needs no member turn (atomic claim). Alerts are stored before their outbox rows
+  (rows carry `alert_id` + `level`). Twilio `send` is synchronous (slot booked under a lock,
+  sleep + HTTP outside it); queue/`drain()` removed.
+
 ## Session log (newest first, one line each)
-- 2026-11-23: chore demo-karnataka-names — demo family is now the Gowda family (parent Lakshmi
-  Gowda, children Ravi and Priya Gowda); numbers, medicines, limits, voice unchanged; tests, docs,
-  README screenshots updated (audit header shows port 8101: captured on a second mock instance); 393 tests.
-- 2026-11-23: chore english-voice-samples — simulator 🗣️ samples now English (took_medicine_en,
-  bp_reading_en, sugar_en, bp_high_en, yes_en, weather_en); Hindi speech parsing still tested; 393 tests.
-- 2026-11-23: chore voice-indian-english — demo parent gets Indian English voice notes
-  (both seeds), simulator picks an en-IN voice (Rishi in Chrome on macOS), label "Indian
-  English", docs + 2 screenshots updated, ElevenLabs voices checked (none Indian on free plan); 392 tests.
-- 2026-11-23: chore rename-khayal — product renamed Care Circle -> Khayal everywhere (UI, chat
-  and voice texts, MCP server name `khayal`, meta key `khayal/sender`, default DB `khayal.db`,
-  packages `khayal-backend`/`khayal-dashboard`, repo URL); brand mark CC -> K; screenshots
-  regenerated (script now also captures voice-and-call.png); fresh clone checked; 391 tests.
-- 2026-11-23: chore team-accuracy-voice — Swetank Kumar in Team; accuracy_test `--kind/--pace/
-  --match`, per-device score, unreadable-vs-wrong split; labelled 24 AI-generated images; Groq run
-  16/22 scored (BP 11/13, glucose 3/3, 0 refusals; daily TPD hit); ElevenLabs live TTS+STT; 391 tests.
-- 2026-11-23: Phase 6 — fresh-clone test (found + fixed: time-of-day test failure, lockfile
-  name drift, missing tzdata for Windows); README "Run it in 3 minutes"; docs/DEMO_SCRIPT.md;
-  docs/AWS_ARCHITECTURE.md (built vs design); MIT LICENSE; history checked: no secrets, one
-  author, no AI trailers. ElevenLabs + accuracy skipped (no voice id, no real photos). 387 tests.
-- 2026-11-23: Phase 5 done — scheduler (reminders, follow-up, missed-dose amber, low-stock
-  refill requests, weekly summary), demo clock, voice phrases + ElevenLabs TTS/STT (mocked
-  tests) + mock/Twilio calls, simulator voice/call UI + recorder, README Voice section +
-  screenshot; live mock run verified across both processes; 387 tests.
-- 2026-11-23: Opt-in live tests + network guard; accuracy token report (chore branch).
-- 2026-11-23: Phase 4 done (dashboard API + React dashboard + README rewrite), then red alerts
-  always go out; 325 tests.
-- 2026-11-22: Phases 0-3 done (setup, MCP core, reader + read-back, channels + simulator).
+- 2026-11-24: Hardening H1 — tag `submission-phase1`; outbox retries + lease claims, inbound
+  dedup + background webhooks, per-member FIFO turns; 16 new tests (393 -> 409); demo checked
+  in mock mode (photo, read-back, red alert + call cards delivered).
+- 2026-11-23: chores — Gowda family names, English voice samples, Indian English voice,
+  rename to Khayal, accuracy tooling + Groq run (16/22 scored), team; 393 tests.
+- 2026-11-22/23: Phases 0-6 done (setup, MCP core, reader, channels, dashboard, voice +
+  reminders, polish + AWS design); fresh-clone checked; 387 tests at phase 6.

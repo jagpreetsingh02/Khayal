@@ -365,6 +365,23 @@ exact match on every field (systolic, diastolic, pulse, or glucose value and uni
   (and the transcript shown in the chat) are kept. Every AI tool
   call and every family decision is in the audit log. The MCP server binds to localhost.
 
+## Reliability
+
+- **Family messages are retried, never silently dropped.** Every family-facing message
+  (alerts, refill notices, missed-dose notices, weekly summary) goes through a store outbox.
+  It is marked delivered only after the channel accepted it. Failed sends retry after 30 s,
+  1 min, 2 min, 5 min, then every 10 min. Red alert messages retry until delivered; anything
+  else stops after 8 attempts. Final failures and every red failure are written to the audit
+  log (`delivery_failed`). The dashboard marks an alert "Not delivered yet" while it retries.
+- **No duplicates.** Twilio `MessageSid` and Telegram `update_id` are recorded; a webhook
+  retry or a poller restart is acknowledged but not processed twice. Webhooks verify the
+  signature, answer at once and process the message in the background.
+- **Per-parent order, parents in parallel.** One parent's messages are handled strictly in
+  arrival order; different parents run concurrently, so one slow photo read does not hold up
+  anyone else.
+- **Known gap:** a message is only in memory between the webhook's answer and the end of
+  processing; a crash in that window loses it. A durable inbox is future work.
+
 ## Roadmap
 
 - [x] Phase 0: repo setup, scaffolds, smoke tests
