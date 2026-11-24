@@ -1,9 +1,10 @@
 """Descriptive weekly summary: numbers against doctor-set limits, nothing more."""
 
 from datetime import datetime, timedelta
+from statistics import mean
 from zoneinfo import ZoneInfo
 
-from app.alerts.thresholds import is_over_limit_bp
+from app.alerts.thresholds import HOME_BP_REFERENCE, is_over_limit_bp
 from app.storage.models import Alert, DoseEvent, Member, Reading
 from mcp_server.guardrails import blocked_terms
 
@@ -25,6 +26,7 @@ def build_summary_text(
         f"{start.astimezone(zone):%d %b} to {(end - timedelta(seconds=1)).astimezone(zone):%d %b}"
     )
     lines = [f"Weekly summary for {parent.name} ({period})."]
+    doctor = f"the limit {parent.possessive} doctor set"
 
     bps = [r for r in readings if r.type == "bp"]
     if bps:
@@ -33,8 +35,17 @@ def build_summary_text(
         over = sum(is_over_limit_bp(r, t) for r in bps)
         lines.append(
             f"BP: {len(bps)} readings, from {lo.systolic}/{lo.diastolic} to "
-            f"{hi.systolic}/{hi.diastolic}. {over} of {len(bps)} at or above the limit set by "
-            f"the doctor ({t['bp_limit_systolic']:g}/{t['bp_limit_diastolic']:g})."
+            f"{hi.systolic}/{hi.diastolic}. {over} of {len(bps)} at or above {doctor} "
+            f"({t['bp_limit_systolic']:g}/{t['bp_limit_diastolic']:g})."
+        )
+        # 2025 AHA/ACC home reference: described against, never interpreted.
+        avg_s = round(mean(r.systolic or 0 for r in bps))
+        avg_d = round(mean(r.diastolic or 0 for r in bps))
+        ref_s, ref_d = HOME_BP_REFERENCE
+        side = "at or above" if avg_s >= ref_s or avg_d >= ref_d else "below"
+        lines.append(
+            f"Home BP average: {avg_s}/{avg_d}, {side} the {ref_s}/{ref_d} reference for "
+            "home readings."
         )
     else:
         lines.append("BP: no readings this week.")
@@ -46,7 +57,7 @@ def build_summary_text(
         lines.append(
             f"Glucose: {len(gl)} readings, from {min(gl):g} to {max(gl):g} mg/dL. "
             f"{low} below {t['glucose_amber_below']:g} and {high} above "
-            f"{t['glucose_amber_above']:g} (limits set by the doctor)."
+            f"{t['glucose_amber_above']:g} (limits {parent.possessive} doctor set)."
         )
     else:
         lines.append("Glucose: no readings this week.")

@@ -7,31 +7,37 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
 ## Current status
 - Submission (Phase 1 of judging) is in: tag **`submission-phase1`** = the exact submitted
   commit. Repo may change until **26 Nov 2026**; `main` must stay demo-ready for the pitch.
-- Current work stream: **Hardening** (below). H1, H2, H3 done and merged (tags
-  `hardening-h1-done`, `hardening-h2-done`, `hardening-h3-done`). CI green on `main`.
+- Current work stream: **Hardening** (below). H1-H4 done and merged (tags
+  `hardening-h1-done` … `hardening-h4-done`). CI green on `main`.
 - Current branch: `main`
-- **Next step: none scheduled; ask the user.** Candidates (README "Production readiness"):
-  Postgres/DynamoDB adapter, schema versioning, structured logging, DPDP export/delete,
-  durable inbox. Keep `main` demo-ready for the pitch (repo frozen after 26 Nov).
+- **Next step: ask the user.** H4 item 5 (durable inbox: webhook payloads into an inbox table
+  with unique provider message id before the 200, processed from it, retried on startup) was
+  **not started** — deferred to keep `main` stable for the 26 Nov pitch. Other candidates:
+  Postgres/DynamoDB adapter, schema versioning, structured logging, DPDP export/delete.
+- **Pitch demo path changed (H4):** severe BP now asks the warning-signs question first:
+  bp high → 1 → **2** → Skip 5 min → bp high → 1 → **2** → RED. (Answer 1 = RED at once.)
 
 ## Hardening (production) — one branch per phase, merged with --no-ff, tagged when done
-- [x] **H1 safety bugs** (tag `hardening-h1-done`): outbox claim/lease + retries (red alert
-  messages forever, others stop at 8; failures -> audit `delivery_failed`), inbound dedup
-  (`inbound_seen`), webhooks ack then process, per-member FIFO turns. Known gap: crash between
-  ack and processing loses that message (durable inbox = future); parent-facing proactive
-  messages (reminders, follow-ups) are sent directly, not retried.
-- [x] **H2 security** (tag `hardening-h2-done`): signed sessions (12 h, logout = all devices),
-  login rate limits, one-time code sign-in via the outbox (`sensitive` + `expires_at`), demo
-  token mock-only, MCP bearer `MCP_SHARED_SECRET`, dev/aws startup check, headers + CSP,
-  reading time in alert reasons. Details: README "Security".
-- [x] **H3 types, CI, Docker** (`hardening-h3-ci`, tag `hardening-h3-done`): simulator router
-  (+ low-stock demo button) mounted only in mock (404 in dev/aws, `/` -> dashboard; startup
-  warns on CHANNEL=simulator outside mock); mypy (config in pyproject, 0 errors, no ignores);
-  `.github/workflows/ci.yml` (backend 3.11+3.13: ruff, format, mypy, pytest; dashboard: npm ci,
-  lint, build; audit job allowed to fail); Dockerfile (node:22-slim -> python:3.13-slim + uv,
-  non-root uid 10001, HEALTHCHECK) + docker-compose.yml (init/mcp/api, volume `khayal-data`,
-  api on 127.0.0.1:8000, mcp not published, `MCP_HOST=0.0.0.0` there only); `/health` =
-  ok / degraded (MCP down, 200) / error (DB, 503); README Docker + production-readiness table.
+- [x] **H1-H3** (tags `hardening-h1/h2/h3-done`): outbox leases + retries (red text forever),
+  inbound dedup, per-member FIFO; signed sessions, codes, rate limits, MCP bearer, startup check,
+  CSP; simulator mock-only, mypy 0, CI (3.11+3.13, dashboard, audit), Docker + Compose,
+  `/health`. Details: README "Security", "Reliability", "Production readiness".
+- [x] **H4 clinical + MCP** (`hardening-h4-mcp`, tag `hardening-h4-done`): 2025 AHA/ACC
+  warning-signs question at severe BP (yes = RED + 108/112; no / no reply 5 min (audited) =
+  rest + repeat; asked again at the repeat; asymptomatic repeat = RED "Urgent: contact her
+  doctor today"); ADA 2026 glucose floors 54/70 (settings only stricter), 54-69 amber + recheck
+  15 min (none = amber `glucose_low_no_recheck`), faint/confused/help = RED; doctor's low-sugar
+  plan (dashboard Settings card, `/api/parents/{id}/care-plan`, `add_member --low-sugar-plan`);
+  "limit her doctor set" via `Member.pronoun` (seeds: she); weekly home average vs 135/85.
+  MCP: titles, all 4 annotations, output schemas + text summary (`ToolResult`), actionable
+  `ToolError`s, `get_history.response_format`, `alert_family(level, reading_id)` only,
+  `create_reminder.note`, `strict_input_validation`. Plausibility 60-260/30-160, HI/LO, unit
+  mix-ups. Reader: no free text, strips return an offered id only (`cat:<slug>` / `med_...`).
+  Names/medicines/notes/plan checked at write time (`app/storage/safe_text.py`). Host/Origin
+  guard (`mcp_server/http_guard.py`). Manifest pin (`mcp_server/manifest.py`,
+  `tool_manifest.sha256`; update: `uv run python -m mcp_server.manifest --update`).
+  Tests: `test_redteam.py`, `test_clinical.py`, `test_tool_metadata.py`; 449 -> 607 (+2 live skipped).
+  Real-photo harness: `accuracy_test.py --import/--real`, `samples/real_photos/`.
 
 ## Phase checklist
 - [x] Phase 0 — setup · [x] Phase 1 — MCP core + storage · [x] Phase 2 — reader + read-back
@@ -64,7 +70,7 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
 
 ## How to run (current)
 - Once: `cd dashboard && npm ci && npm run build` (Node 20.19+/22.12+). Backend: `cd backend && uv sync && uv run
-  python -m pytest` (449 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
+  python -m pytest` (607 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
   Local venv was moved from ~/Downloads/care-circle, so `.venv/bin/pytest` has a stale shebang:
   use `python -m pytest` (or `uv sync --reinstall` to fix the scripts).
 - **Demo: `uv run python ../scripts/start.py --seed`** -> http://localhost:8000/simulator and
@@ -114,6 +120,13 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   SQLite 3.50 (`UPDATE ... RETURNING` for claims). Calls: `CallProvider.can_call(member)`.
 
 ## Decisions log
+- 2026-11-24 (H4): asymptomatic severe repeat stays **red** (rings family) with "contact her
+  doctor today" wording; no-recheck after a low sugar is **amber** (respects sharing, cap).
+  One alert per (reading, rule) via `alerts.rule`; `alert_family` sends the most urgent unsent
+  candidate. Symptom answers stored on `readings.symptoms` by the engine only. Strip candidates
+  = parent's medicines + curated brand list (else a fresh family could never add one). Family
+  pronoun field (default they/their) rather than inferring from names. `safe_text` rejects
+  digits-7+, links, "@", markup, instruction words (system/ignore/send/approve/...).
 - 2026-11-22 (Ph 0-3): mock-first, SQLite now; Groq dev / Bedrock AWS; no AI attribution; no
   `approve_refill` MCP tool; sender identity in MCP `_meta`, no parent_id args; `log_reading` stores
   unconfirmed, confirmation is the parent's reply; `alert_family` re-evaluates, no escalation,
@@ -132,27 +145,15 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   default, TTS cache + daily budget, STT parsed like text (still needs "1"), calls only for RED
   on a confirmed reading. Accuracy only on AI-generated images, labelled so. Demo parent in
   English, en-IN voice. Name **Khayal** (old commits/tags keep Care Circle).
-- 2026-11-24 (H1): red retry-forever applies to alert *text* messages; red voice calls stop at
-  8 attempts (hours of repeated calls is worse than a retried text). Background ticker /
-  scheduler skip a parent who is busy (retry next 30 s pass); demo buttons wait their turn.
-  Outbox needs no member turn (atomic claim). Alerts are stored before their outbox rows
-  (rows carry `alert_id` + `level`). Twilio `send` is synchronous (slot booked under a lock,
-  sleep + HTTP outside it); queue/`drain()` removed.
-- 2026-11-24 (H3): simulator + low-stock demo = mock only (404, not 403, elsewhere); dev with
-  CHANNEL=simulator is a startup warning, not an error. Docker: one-shot `init` service writes
-  mock secrets to `/data/mock-secrets.env` (O_EXCL) and seeds on first start; in dev/aws it
-  runs the startup check and exits 1, so api/mcp never start. api published on 127.0.0.1 only.
-  `ruff format --check` added to CI (codebase already conformed).
-- 2026-11-24 (H2): logout = per-member session version in kv (ends all devices). Session times
-  use the real clock (demo clock jumps must not sign out); code + outbox expiry use the app
-  (demo) clock. Code request takes `member_id` (user spec); mock + default token lists the demo
-  members in `/api/login/hint` so the code path is clickable. Audit actor `unknown` for
-  unproven sign-in events; login rows go to the family parent's audit (unknown ids: none).
-  Startup check also requires secrets >= 32 chars. Alert time format "2:14 PM, 24 Nov" (IST).
+- 2026-11-24 (H1-H3): red retry-forever = alert *text*; red calls stop at 8. Busy parents
+  skipped by ticker. Logout = per-member session version; session times use the real clock,
+  codes/outbox the demo clock. Simulator + low-stock demo mock-only (404 elsewhere). Docker
+  `init` writes mock secrets once; dev/aws startup check exits 1 on unsafe config.
 
 ## Session log (newest first, one line each)
-- 2026-11-24: Hardening H3 — simulator mock-only, mypy 13 -> 0, CI green (3.11/3.13, dashboard,
-  audit), Docker image + compose checked locally (mock golden path, red alert via mcp container
-  on the dashboard, MCP down = degraded, dev refuses empty/short secrets); 439 -> 449 tests.
-- 2026-11-24: Hardening H1 (409 tests) and H2 (439 tests, demo run incl. MCP 401 checks).
+- 2026-11-24: Hardening H4 — clinical rules, MCP metadata, red-team suite (mutation-checked),
+  manifest pin (same hash on 3.11/3.12/3.14), real-photo harness; start.py demo walked over
+  HTTP (mock providers, scratch DB): read-back, severe → question → repeat → RED, refill
+  approve, MCP 403/401. Durable inbox deferred.
+- 2026-11-24: Hardening H1 (409 tests), H2 (439), H3 (449; CI + Docker checked locally).
 - 2026-11-22/23: Phases 0-6 + chores done (387 tests at phase 6, 393 after chores).

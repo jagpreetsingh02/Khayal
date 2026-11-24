@@ -116,6 +116,84 @@ function ThresholdEditor({ parentId, parent }: { parentId: string; parent: strin
   )
 }
 
+interface CarePlan {
+  label: string
+  low_sugar_plan: string | null
+  max_length: number
+  fallback: string
+}
+
+function LowSugarPlan({ parentId, parent }: { parentId: string; parent: string }) {
+  const { data, error, reload } = usePoll<CarePlan>(`/parents/${parentId}/care-plan`, 30000)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [confirmed, setConfirmed] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  if (!data) return error ? <ErrorNote error={error} /> : <Skeleton lines={3} />
+  const current = data.low_sugar_plan ?? ''
+  const value = draft ?? current
+  const changed = value.trim() !== current
+
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setMessage(null)
+    try {
+      await put(`/parents/${parentId}/care-plan`, {
+        low_sugar_plan: value.trim() || null,
+        doctor_confirmed: true,
+      })
+      setDraft(null)
+      setConfirmed(false)
+      setMessage({ ok: true, text: 'Saved. Sent word for word after a low sugar reading.' })
+      void reload()
+    } catch (err) {
+      setMessage({ ok: false, text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={save} className="stack">
+      <p className="doctor-label">
+        <Icon name="lock" size={16} /> After a low sugar reading, {parent} gets this text as
+        “Your doctor’s plan: …”. Khayal never adds advice of its own. Without a plan the message
+        is: “{data.fallback}”
+      </p>
+      <label className="stack">
+        <span>What the doctor said to do when sugar is low</span>
+        <textarea
+          className="plan-text"
+          rows={3}
+          maxLength={data.max_length}
+          value={value}
+          placeholder="Copy the doctor’s words. No links or phone numbers."
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <small className="muted">
+          {value.length}/{data.max_length}
+        </small>
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+        This is what {parent}'s doctor wrote down.
+      </label>
+      <div className="btn-row">
+        <button className="btn btn-primary" disabled={!confirmed || !changed || saving}>
+          {saving ? 'Saving…' : 'Save plan'}
+        </button>
+      </div>
+      {message && (
+        <p className={message.ok ? 'ok-note' : 'error-note'} role="status">
+          {message.text}
+        </p>
+      )}
+    </form>
+  )
+}
+
 const SHARE_ROWS: { key: Category; title: string; text: string }[] = [
   { key: 'readings', title: 'Readings', text: 'BP and glucose numbers, charts and the doctor’s limits' },
   {
@@ -232,6 +310,13 @@ export function SettingsPage({ parentId, parent, sharing, onSaved }: {
       <Card title="Alert limits">
         {sharing.visible_to_me.readings ? (
           <ThresholdEditor parentId={parentId} parent={parent} />
+        ) : (
+          <NotShared parent={parent} category="readings" />
+        )}
+      </Card>
+      <Card title="Doctor's plan for low sugar">
+        {sharing.visible_to_me.readings ? (
+          <LowSugarPlan parentId={parentId} parent={parent} />
         ) : (
           <NotShared parent={parent} category="readings" />
         )}

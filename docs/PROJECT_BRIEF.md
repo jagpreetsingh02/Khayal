@@ -200,12 +200,17 @@ Every tool call is written to `audit_log`.
 | Tool | Does | Guardrail |
 |---|---|---|
 | `log_reading(type, values, confidence, image_ref)` | Writes reading (status `unconfirmed` → `confirmed`) | `parent_id` from server context, never from LLM args |
-| `get_history(range)` / `get_meds()` | Reads past readings / medicines | Read-only |
-| `create_reminder(med_id, times)` | Creates reminder schedule (Asia/Kolkata) | Only for confirmed medicines |
-| `alert_family(level, reason, reading_id)` | Sends alert to family members; red → also triggers voice call (if enabled) | Rate-capped for amber; red never suppressed |
+| `get_history(range, type, response_format)` / `get_meds()` | Reads past readings (concise stats by default, `detailed` = every reading) / medicines | Read-only |
+| `create_reminder(med_id, times, note?)` | Creates reminder schedule (Asia/Kolkata) | Only for confirmed medicines; note ≤ 40 chars, no links / numbers / instructions |
+| `alert_family(level, reading_id)` | Sends alert to family members; red → also triggers voice call (if enabled) | No recipient or free text accepted (H4); server writes the text; rate-capped for amber; red never suppressed |
 | `request_refill(med_id, qty)` | Creates `pending_approval` refill only | Qty cap (e.g. ≤ 1 month supply); Schedule X excluded |
 | `weekly_summary()` | Descriptive summary text (+ audio) | Output filter blocks diagnosis/dosing words |
 | ~~`approve_refill`~~ | **Does not exist as an MCP tool.** Only `POST /api/refills/{id}/approve` in the dashboard API, authenticated family member | Human in the loop by construction |
+
+H4 (24 Nov): every tool has a title, all four annotations set explicitly (only `alert_family`
+is open-world; `get_history`, `get_meds`, `weekly_summary` are read-only), an output schema
+with structured content + a text summary, `isError` results with what to do, and the manifest
+is pinned by hash (`backend/mcp_server/tool_manifest.sha256`). README "MCP tools" has the table.
 
 Mention in pitch: MCP elicitation (form/URL mode) is the standards-aligned concept for this
 checkpoint; we implement it as a DB state machine because our "client" is a backend.
@@ -240,8 +245,10 @@ Low-stock check → `request_refill`.
 ## 6. Rules
 
 ### 6.1 Plausibility (reject or ask retake)
-glucose 20–600 mg/dL · systolic 70–250 · diastolic 40–150 · systolic > diastolic ·
-pulse 30–200 · flag if deviates hugely from the parent's own recent history.
+glucose 20–600 mg/dL (1.1–33.3 mmol/L; a decimal "mg/dL" or a large "mmol/L" value = unit
+mix-up) · glucometer HI / LO stored at 600 / 20 with the flag · systolic 60–260 · diastolic
+30–160 · systolic > diastolic · pulse 30–200 · flag if deviates hugely from the parent's own
+recent history. (Ranges widened from 70–250 / 40–150 in H4.)
 
 ### 6.2 Vision output schema
 ```json
@@ -249,33 +256,48 @@ pulse 30–200 · flag if deviates hugely from the parent's own recent history.
   "device_type": "bp | glucose | unknown",
   "systolic": 0, "diastolic": 0, "pulse": 0,
   "glucose_value": 0, "glucose_unit": "mg/dL | mmol/L | null",
+  "display": "HI | LO | null",
   "legible": true,
   "issues": ["glare", "angle", "partial", "blur"]
 }
 ```
-Nulls for missing fields. `legible=false` or any failed rule → ask for a retake with tips
+Nulls for missing fields. Extra fields are forbidden and there is no free-text field. A strip
+photo returns only `{"medicine_id": <an offered id> | "unknown", "legible", "issues"}`: the
+reader picks from the parent's medicines and the curated brand list, never returns OCR text. `legible=false` or any failed rule → ask for a retake with tips
 (hold phone straight, avoid light reflection, fill frame with the screen).
 
 ### 6.3 Alert thresholds (defaults — editable, labelled "set by your doctor")
 
 | Level | Trigger | Basis |
 |---|---|---|
-| Red | Glucose < 54 mg/dL | ADA Level 2 hypoglycaemia |
-| Amber | Glucose 54–69 mg/dL | ADA Level 1 |
+| Red | Glucose < 54 mg/dL (**fixed floor**: a doctor-set value can only be stricter) | ADA Standards of Care 2026, level 2 |
+| Amber + recheck | Glucose 54–69 mg/dL (fixed floor 70); parent asked to recheck in 15 min | ADA level 1 |
+| Amber | Low glucose and **no confirmed recheck within 15 min** | rule |
+| Red | Any low glucose + parent answers yes to "did you faint, feel confused, or did someone have to help you?" | ADA level 3 (needs assistance) |
 | Amber | Glucose > 250 mg/dL | **illustrative, clinician-set** (no authoritative source retrieved) |
-| — (no alert) | First BP ≥ 180/120: family **not** alerted; parent is asked to rest 5 min and repeat | rule |
-| Red | BP ≥ 180 systolic or ≥ 120 diastolic **on a confirmed repeat 5–60 min after the first** | AHA/ACC 2025 severe hypertension |
+| — (question first) | Confirmed BP ≥ 180/120: one yes/no warning-signs question (chest pain, breathlessness, one-sided weakness/numbness or slurred speech, severe headache, confusion, sudden vision problems) before anything else | 2025 AHA/ACC |
+| Red | Warning signs: yes → family alert + call; parent told to call 108/112 | 2025 AHA/ACC (hypertensive emergency signs) |
+| — (no alert) | Warning signs: no, or no reply in 5 min (audited) → rest 5 min and repeat | rule |
+| Red ("urgent: contact her doctor today") | Confirmed repeat 5–60 min later still ≥ 180/120, question asked again, no signs / no reply | 2025 AHA/ACC severe hypertension without emergency signs |
 | Amber | First BP ≥ 180/120 and **no confirmed repeat within 15 min** ("high reading, no repeat taken") | rule |
 | Amber | 3+ BP readings above the limit (140/90) in a week | rule |
 | Amber | 2+ missed doses in a day | rule |
+
+Low-sugar guidance to the parent is only the doctor's own plan, entered at onboarding or in
+Settings ("Your doctor's plan: …"); without it: "Please follow your doctor's plan for low
+sugar." Every family alert says "above/below the limit her doctor set" (pronoun from
+onboarding, default "their"). The weekly summary also describes the home BP average against
+the 135/85 home reference (2025 AHA/ACC), descriptively.
 
 Family alert texts describe numbers against limits only (no parent instructions such as
 "please rest"); parent wording lives in the chat templates. Consent paused/revoked (§6.5):
 no logging, alerts or reminders until the parent agrees again.
 
 Why the repeat rule: a home BP telemonitoring study (JMIR 2025) found ~57% of readings
-triggered alerts; raising systolic threshold 170→180 cut alerts by 54%. Always include
-"If you feel unwell, call 108/112" on red.
+triggered alerts; raising systolic threshold 170→180 cut alerts by 54%. 108/112 is said to the
+parent when warning signs are reported (and as a safety net in the repeat messages); the
+family text for an asymptomatic severe repeat uses "contact her doctor today", not ambulance
+wording.
 
 ### 6.4 Bot scope and language
 - Only readings, medicines, reminders, refills, summaries. Off-topic → fixed refusal.

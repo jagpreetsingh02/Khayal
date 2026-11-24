@@ -21,6 +21,12 @@ SetBy = Literal["default", "doctor"]
 AlertLevel = Literal["amber", "red"]
 RefillStatus = Literal["pending_approval", "approved", "rejected", "sent_to_pharmacy", "fulfilled"]
 Actor = Literal["agent", "member", "system", "unknown"]  # unknown: unproven sign-in
+Pronoun = Literal["she", "he", "they"]
+# The parent's own answer to the warning-signs question after a severe BP or a low sugar
+# reading (asked server-side, never set by a model). no_reply: not answered in 5 minutes.
+SymptomAnswer = Literal["yes", "no", "no_reply"]
+MeterDisplay = Literal["HI", "LO"]  # glucometer shows HI / LO instead of a number
+POSSESSIVE: dict[str, str] = {"she": "her", "he": "his", "they": "their"}
 
 
 def utcnow() -> datetime:
@@ -50,6 +56,13 @@ class Member(BaseModel):
     consent_status: ConsentStatus = "pending"
     consent_at: datetime | None = None
     consent_text_version: str | None = None  # which consent notice the parent agreed to (§6.5)
+    # How family texts refer to the parent ("above the limit her doctor set"); set at
+    # onboarding by the family. Default "they" -> "their doctor".
+    pronoun: Pronoun = "they"
+
+    @property
+    def possessive(self) -> str:
+        return POSSESSIVE.get(self.pronoun, "their")
 
 
 class Reading(BaseModel):
@@ -67,6 +80,10 @@ class Reading(BaseModel):
     image_ref: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     confirmed_at: datetime | None = None
+    symptoms: SymptomAnswer | None = None  # warning-signs answer (severe BP / low sugar)
+    # Glucose only: the meter showed HI or LO; glucose_mgdl then holds the meter's limit
+    # (600 / 20), so the limits still apply.
+    display: MeterDisplay | None = None
 
 
 class Medicine(BaseModel):
@@ -82,6 +99,7 @@ class Medicine(BaseModel):
     # Extension to §7: a medicine only gets reminders once the parent confirmed it
     # (strip photo read back, or added by family). Unconfirmed = not yet verified.
     confirmed: bool = False
+    reminder_note: str | None = None  # short label shown with reminders, e.g. "after food"
 
 
 class DoseEvent(BaseModel):
@@ -108,6 +126,7 @@ class Alert(BaseModel):
     level: AlertLevel
     reason: str
     reading_id: str | None = None
+    rule: str | None = None  # which rule fired; one alert per (reading, rule)
     notified_member_ids: list[str] = Field(default_factory=list)
     acknowledged_by: str | None = None
     acknowledged_at: datetime | None = None

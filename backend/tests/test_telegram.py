@@ -121,7 +121,8 @@ def test_polling_runs_the_conversation_and_alerts_family_on_simulator():
     bot.updates = [update(11, text="1")]
     tg.poll_once(svc)
     assert tg.offset == 12
-    assert "I have told your family." in bot.sent[-1]["text"]
+    assert "I have told your family." in bot.sent[-2]["text"]
+    assert bot.sent[-1]["text"] == tpl.LOW_SUGAR_QUESTION
     [alert] = [i.text for i in svc.simulator.feed(child.channel_ref)]
     assert alert.startswith("RED alert for Lakshmi")
 

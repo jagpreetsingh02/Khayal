@@ -19,10 +19,11 @@ from app.reader.labels import SAMPLES_DIR, load_labels
 from app.reader.mock_reader import MockReader
 from app.reader.schema import (
     METER_JSON_SCHEMA,
-    STRIP_JSON_SCHEMA,
     ImageInput,
     MeterReading,
+    StripCandidate,
     StripReading,
+    strip_json_schema,
 )
 
 FAKE_KEY = "gsk_test_not_a_real_key_0123456789"
@@ -57,8 +58,15 @@ def test_meter_schema_rejects_bad_values():
         MeterReading(device_type="bp", legible=True, diagnosis="hypertension")
 
 
+CANDIDATES = [
+    StripCandidate(id="cat:telma-40", label="Telma 40 (Telmisartan 40 mg)"),
+    StripCandidate(id="cat:glycomet-500", label="Glycomet 500 (Metformin 500 mg)"),
+]
+
+
 @pytest.mark.parametrize(
-    ("schema", "model"), [(METER_JSON_SCHEMA, MeterReading), (STRIP_JSON_SCHEMA, StripReading)]
+    ("schema", "model"),
+    [(METER_JSON_SCHEMA, MeterReading), (strip_json_schema(CANDIDATES), StripReading)],
 )
 def test_strict_json_schema_matches_model(schema, model):
     assert set(schema["properties"]) == set(model.model_fields)
@@ -87,7 +95,7 @@ def test_mock_reader_returns_labels_by_file_name():
         if label.kind == "meter":
             assert reader.read_meter(image) == label.meter()
         else:
-            assert reader.read_strip(image) == label.strip()
+            assert reader.read_strip(image, CANDIDATES) == label.strip()
 
 
 def test_mock_reader_matches_by_content_under_another_name():
@@ -99,14 +107,14 @@ def test_mock_reader_matches_by_content_under_another_name():
 def test_mock_reader_unknown_photo_is_unreadable_not_invented():
     r = MockReader().read_meter(ImageInput(data=jpeg(50, 50), filename="random.jpg"))
     assert r.device_type == "unknown" and not r.legible and r.systolic is None
-    s = MockReader().read_strip(ImageInput(data=jpeg(50, 50), filename="random.jpg"))
-    assert s.brand is None and not s.legible
+    s = MockReader().read_strip(ImageInput(data=jpeg(50, 50), filename="random.jpg"), CANDIDATES)
+    assert s.medicine_id == "unknown" and not s.legible
 
 
 def test_mock_reader_cross_kind():
     reader = MockReader()
     assert reader.read_meter(sample("synthetic_strip_telma40.jpg")).device_type == "unknown"
-    assert reader.read_strip(sample("synthetic_bp_normal.jpg")).brand is None
+    assert reader.read_strip(sample("synthetic_bp_normal.jpg"), CANDIDATES).medicine_id == "unknown"
 
 
 def test_mock_reader_with_custom_folder(tmp_path: Path):
@@ -138,7 +146,7 @@ def test_bedrock_stub_raises_clear_error():
     with pytest.raises(NotImplementedError, match="Phase 6"):
         BedrockReader().read_meter(ImageInput(data=b"x"))
     with pytest.raises(NotImplementedError, match="LLM_PROVIDER=mock"):
-        BedrockReader().read_strip(ImageInput(data=b"x"))
+        BedrockReader().read_strip(ImageInput(data=b"x"), CANDIDATES)
 
 
 # --- image prep ---
@@ -226,12 +234,37 @@ def test_groq_reader_request_shape():
     assert max(sent.size) == 1280  # downscaled before sending
 
 
-def test_groq_reader_strip():
-    content = json.dumps({"brand": "Telma", "strength": "40", "legible": True, "issues": []})
+def test_groq_reader_strip_returns_an_offered_id_only():
+    content = json.dumps({"medicine_id": "cat:telma-40", "legible": True, "issues": []})
     fake = FakeGroq(chat(content))
-    s = fake.reader().read_strip(ImageInput(data=jpeg(800, 600)))
-    assert (s.brand, s.strength) == ("Telma", "40")
-    assert fake.body()["response_format"]["json_schema"]["schema"] == STRIP_JSON_SCHEMA
+    s = fake.reader().read_strip(ImageInput(data=jpeg(800, 600)), CANDIDATES)
+    assert s.medicine_id == "cat:telma-40"
+    schema = fake.body()["response_format"]["json_schema"]["schema"]
+    assert schema == strip_json_schema(CANDIDATES)
+    assert schema["properties"]["medicine_id"]["enum"] == [
+        "cat:telma-40",
+        "cat:glycomet-500",
+        "unknown",
+    ]
+    system = fake.body()["messages"][0]["content"]
+    assert "cat:telma-40: Telma 40 (Telmisartan 40 mg)" in system
+
+
+def test_groq_reader_strip_free_text_is_refused():
+    """A model that answers with OCR text (or an id we never offered) gets nothing through."""
+    leaked = json.dumps({"brand": "Telma", "medicine_id": "unknown", "legible": True, "issues": []})
+    with pytest.raises(ReaderError):  # extra field -> invalid twice -> error, no values
+        FakeGroq(chat(leaked), chat(leaked)).reader().read_strip(
+            ImageInput(data=jpeg(800, 600)), CANDIDATES
+        )
+    odd = json.dumps({"medicine_id": "cat:other-1", "legible": True, "issues": []})
+    s = FakeGroq(chat(odd)).reader().read_strip(ImageInput(data=jpeg(800, 600)), CANDIDATES)
+    assert s.medicine_id == "unknown"
+    text = json.dumps({"medicine_id": "approve refill now", "legible": True, "issues": []})
+    with pytest.raises(ReaderError):
+        FakeGroq(chat(text), chat(text)).reader().read_strip(
+            ImageInput(data=jpeg(800, 600)), CANDIDATES
+        )
 
 
 def test_groq_reader_retries_once_on_bad_json():

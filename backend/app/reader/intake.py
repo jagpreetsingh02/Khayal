@@ -6,7 +6,13 @@ state machine, so the two can never disagree about what is plausible.
 
 from datetime import datetime, timedelta
 
-from app.reader.rules import PlausibilityResult, check_plausibility, to_mgdl
+from app.reader.rules import (
+    DISPLAY_MGDL,
+    PlausibilityResult,
+    check_glucose_unit,
+    check_plausibility,
+    to_mgdl,
+)
 from app.storage.base import Store
 from app.storage.models import Reading, ReadingSource, ReadingType, utcnow
 
@@ -27,13 +33,25 @@ def build_reading(
     source: ReadingSource = "photo",
     confidence: float | None = None,
     image_ref: str | None = None,
+    display: str | None = None,
     now: datetime | None = None,
 ) -> tuple[Reading | None, PlausibilityResult]:
-    """Return (unsaved unconfirmed reading, check). The reading is None if a rule failed."""
+    """Return (unsaved unconfirmed reading, check). The reading is None if a rule failed.
+
+    `display` "HI" / "LO": the glucometer showed that instead of a number; the reading is
+    stored at the meter's limit (600 / 20 mg/dL) with the flag, so the limits still apply."""
     now = now or utcnow()
     is_bp = type == "bp"
     glucose = None
-    if type == "glucose" and glucose_value is not None:
+    if display is not None and (is_bp or display not in DISPLAY_MGDL):
+        problem = f"A {type.upper()} reading cannot show {display!r}"
+        return None, PlausibilityResult(ok=False, problems=[problem])
+    if type == "glucose" and display is not None:
+        glucose = DISPLAY_MGDL[display]
+    elif type == "glucose" and glucose_value is not None:
+        unit_problems = check_glucose_unit(glucose_value, glucose_unit)
+        if unit_problems:
+            return None, PlausibilityResult(ok=False, problems=unit_problems)
         glucose = to_mgdl(glucose_value, glucose_unit)
     history = store.list_readings(
         parent_id, since=now - timedelta(days=HISTORY_DAYS), type=type, status="confirmed"
@@ -60,6 +78,7 @@ def build_reading(
         source=source,
         confidence=confidence,
         image_ref=image_ref,
+        display="HI" if display == "HI" else "LO" if display == "LO" else None,
         created_at=now,
     )
     return reading, check

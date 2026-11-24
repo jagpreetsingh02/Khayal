@@ -10,11 +10,15 @@ from pydantic import BaseModel, Field
 
 from app.storage.models import Reading
 
-GLUCOSE_MGDL_RANGE = (20, 600)
-SYSTOLIC_RANGE = (70, 250)
-DIASTOLIC_RANGE = (40, 150)
+# What a home meter can plausibly show; anything outside means a misread photo.
+GLUCOSE_MGDL_RANGE = (20, 600)  # glucometers show LO / HI beyond this
+GLUCOSE_MMOL_RANGE = (1.1, 33.3)  # the same range in mmol/L
+SYSTOLIC_RANGE = (60, 260)
+DIASTOLIC_RANGE = (30, 160)
 PULSE_RANGE = (30, 200)
 MMOL_TO_MGDL = 18.0
+# HI / LO on a glucometer: stored as the meter's limit, with the display flag kept.
+DISPLAY_MGDL = {"LO": float(GLUCOSE_MGDL_RANGE[0]), "HI": float(GLUCOSE_MGDL_RANGE[1])}
 
 # "Deviates hugely from the parent's own recent history". BP is stable day to day, so a
 # relative band works; glucose swings a lot around meals, so use a ratio instead.
@@ -36,27 +40,43 @@ def to_mgdl(value: float, unit: str | None) -> float:
     return float(value)
 
 
-def _in_range(name: str, value: float | None, bounds: tuple[int, int]) -> list[str]:
+def _in_range(name: str, value: float | None, bounds: tuple[float, float]) -> list[str]:
+    """Problems are written for the model calling log_reading: what is wrong, in numbers."""
     if value is None:
-        return [f"{name} missing"]
+        return [f"{name} is missing"]
     low, high = bounds
     if not low <= value <= high:
-        return [f"{name} {value:g} outside plausible range {low}-{high}"]
+        return [f"{name} {value:g} is outside {low:g}-{high:g}"]
+    return []
+
+
+def check_glucose_unit(value: float | None, unit: str | None) -> list[str]:
+    """mg/dL vs mmol/L mix-ups: 6.2 "mg/dL" is almost certainly mmol/L, 112 "mmol/L" mg/dL."""
+    if value is None:
+        return []
+    is_mmol = (unit or "").lower().replace(" ", "") in {"mmol/l", "mmol"}
+    if is_mmol and value > GLUCOSE_MMOL_RANGE[1]:
+        return [
+            f"Glucose {value:g} mmol/L is outside {GLUCOSE_MMOL_RANGE[0]:g}-"
+            f"{GLUCOSE_MMOL_RANGE[1]:g} mmol/L (is the meter in mg/dL?)"
+        ]
+    if not is_mmol and value <= GLUCOSE_MMOL_RANGE[1] and value != int(value):
+        return [f"Glucose {value:g} mg/dL looks like a mmol/L value (check the unit on the meter)"]
     return []
 
 
 def check_bp(systolic: float | None, diastolic: float | None, pulse: float | None) -> list[str]:
-    problems = _in_range("systolic", systolic, SYSTOLIC_RANGE)
-    problems += _in_range("diastolic", diastolic, DIASTOLIC_RANGE)
+    problems = _in_range("Systolic", systolic, SYSTOLIC_RANGE)
+    problems += _in_range("Diastolic", diastolic, DIASTOLIC_RANGE)
     if pulse is not None:
-        problems += _in_range("pulse", pulse, PULSE_RANGE)
+        problems += _in_range("Pulse", pulse, PULSE_RANGE)
     if systolic is not None and diastolic is not None and systolic <= diastolic:
-        problems.append("systolic must be greater than diastolic")
+        problems.append(f"Systolic {systolic:g} must be higher than diastolic {diastolic:g}")
     return problems
 
 
 def check_glucose(glucose_mgdl: float | None) -> list[str]:
-    return _in_range("glucose", glucose_mgdl, GLUCOSE_MGDL_RANGE)
+    return _in_range("Glucose", glucose_mgdl, GLUCOSE_MGDL_RANGE)
 
 
 def bp_deviates(value: float, history: list[float]) -> bool:

@@ -6,7 +6,7 @@ model), BedrockReader (stub for the AWS deployment). Pick one with LLM_PROVIDER 
 
 from abc import ABC, abstractmethod
 
-from app.reader.schema import ImageInput, MeterReading, StripReading
+from app.reader.schema import ImageInput, MeterReading, StripCandidate, StripReading
 
 
 class ReaderError(RuntimeError):
@@ -24,5 +24,6 @@ class Reader(ABC):
         """Read a BP monitor or glucometer screen."""
 
     @abstractmethod
-    def read_strip(self, image: ImageInput) -> StripReading:
-        """Read the brand and strength printed on a medicine strip."""
+    def read_strip(self, image: ImageInput, candidates: list[StripCandidate]) -> StripReading:
+        """Which of `candidates` (the parent's medicines + the curated brand list) the strip
+        shows, as an id, or "unknown". Never the printed text itself."""

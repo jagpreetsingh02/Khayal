@@ -31,9 +31,11 @@ from app.storage.models import (
     Role,
     SetBy,
     Sharing,
+    SymptomAnswer,
     Threshold,
     utcnow,
 )
+from app.storage.safe_text import check_medicine_text, check_name, check_note
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -121,6 +123,11 @@ MIGRATIONS = [
     ("outbox", "level", "TEXT"),
     ("outbox", "expires_at", "TEXT"),
     ("outbox", "sensitive", "INTEGER NOT NULL DEFAULT 0"),
+    ("members", "pronoun", "TEXT NOT NULL DEFAULT 'they'"),
+    ("readings", "symptoms", "TEXT"),
+    ("readings", "display", "TEXT"),
+    ("alerts", "rule", "TEXT"),
+    ("medicines", "reminder_note", "TEXT"),
 ]
 
 # Columns stored as JSON text.
@@ -235,13 +242,17 @@ class SQLiteStore(Store):
         return where, params
 
     # --- families / members ---
+    # Names are checked at write time (safe_text): they are repeated in messages and tool
+    # results later, so a name must never carry a link, a phone number or instructions.
     def add_family(self, family: Family) -> Family:
+        family = family.model_copy(update={"name": check_name(family.name, "Family name")})
         return self._insert("families", family)
 
     def get_family(self, family_id: str) -> Family:
         return self._one(Family, "families", "id", family_id)
 
     def add_member(self, member: Member) -> Member:
+        member = member.model_copy(update={"name": check_name(member.name, "Member name")})
         return self._insert("members", member)
 
     def get_member(self, member_id: str) -> Member:
@@ -304,6 +315,10 @@ class SQLiteStore(Store):
         sql = f"SELECT * FROM readings WHERE {' AND '.join(where)} ORDER BY created_at"
         return self._query(Reading, sql, tuple(params))
 
+    def set_reading_symptoms(self, reading_id: str, answer: SymptomAnswer) -> Reading:
+        self._update("readings", "id", reading_id, {"symptoms": answer})
+        return self.get_reading(reading_id)
+
     def set_reading_status(
         self, reading_id: str, status: ReadingStatus, at: datetime | None = None
     ) -> Reading:
@@ -315,7 +330,14 @@ class SQLiteStore(Store):
 
     # --- medicines / doses ---
     def add_medicine(self, medicine: Medicine) -> Medicine:
-        return self._insert("medicines", medicine)
+        update: dict[str, Any] = {
+            "brand": check_medicine_text(medicine.brand, "Medicine brand"),
+            "generic": check_medicine_text(medicine.generic, "Generic name"),
+            "strength": check_medicine_text(medicine.strength, "Strength"),
+        }
+        if medicine.reminder_note is not None:
+            update["reminder_note"] = check_note(medicine.reminder_note, "Reminder note")
+        return self._insert("medicines", medicine.model_copy(update=update))
 
     def get_medicine(self, medicine_id: str) -> Medicine:
         return self._one(Medicine, "medicines", "id", medicine_id)
@@ -331,6 +353,11 @@ class SQLiteStore(Store):
 
     def set_medicine_times(self, medicine_id: str, times: list[str]) -> Medicine:
         self._update("medicines", "id", medicine_id, {"times": json.dumps(times)})
+        return self.get_medicine(medicine_id)
+
+    def set_medicine_note(self, medicine_id: str, note: str | None) -> Medicine:
+        value = check_note(note, "Reminder note") if note is not None else None
+        self._update("medicines", "id", medicine_id, {"reminder_note": value})
         return self.get_medicine(medicine_id)
 
     def set_medicine_stock(self, medicine_id: str, stock_count: int) -> Medicine:

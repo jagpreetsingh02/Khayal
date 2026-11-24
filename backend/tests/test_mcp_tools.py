@@ -186,7 +186,7 @@ def test_parent_sees_only_own_data(w):
         Reading(parent_id=w.other_parent.id, type="glucose", glucose_mgdl=40, status="confirmed")
     )
     with pytest.raises(ToolError, match="not found"):
-        w.call("alert_family", {"level": "red", "reason": "low", "reading_id": other_r.id})
+        w.call("alert_family", {"level": "red", "reading_id": other_r.id})
 
 
 # ---------- log_reading ----------
@@ -219,10 +219,10 @@ def test_log_reading_converts_mmol(w):
 
 
 def test_log_reading_rejects_implausible_without_storing(w):
-    out = w.call("log_reading", {"type": "bp", "values": {"systolic": 80, "diastolic": 95}})
-    assert out["stored"] is False and out["problems"] and "ask_retake" in out
-    out = w.call("log_reading", {"type": "glucose", "values": {"glucose_value": 900}})
-    assert out["stored"] is False
+    with pytest.raises(ToolError, match="Systolic 80 must be higher than diastolic 95"):
+        w.call("log_reading", {"type": "bp", "values": {"systolic": 80, "diastolic": 95}})
+    with pytest.raises(ToolError, match="Glucose 900 is outside 20-600; ask the parent"):
+        w.call("log_reading", {"type": "glucose", "values": {"glucose_value": 900}})
     assert w.store.list_readings(w.parent.id) == []
 
 
@@ -240,7 +240,7 @@ def test_get_history_returns_confirmed_only_in_range(w):
     w.confirmed_reading(type="bp", systolic=130, diastolic=80)
     w.confirmed_reading(type="glucose", glucose_mgdl=110, created_at=utcnow() - timedelta(days=10))
     w.store.add_reading(Reading(parent_id=w.parent.id, type="bp", systolic=150, diastolic=90))
-    week = w.call("get_history", {"range": "7d"})
+    week = w.call("get_history", {"range": "7d", "response_format": "detailed"})
     assert week["count"] == 1 and week["readings"][0]["systolic"] == 130
     assert w.call("get_history", {"range": "30d"})["count"] == 2
     assert w.call("get_history", {"range": "30d", "type": "glucose"})["count"] == 1
@@ -281,17 +281,17 @@ def test_no_alert_before_parent_confirms(w):
     with pytest.raises(ToolError, match="confirms"):
         w.call(
             "alert_family",
-            {"level": "red", "reason": "low glucose", "reading_id": out["reading_id"]},
+            {"level": "red", "reading_id": out["reading_id"]},
         )
     assert w.outbox.outbox == []
 
 
 def test_red_glucose_alert_notifies_every_child(w):
     r = w.confirmed_reading(type="glucose", glucose_mgdl=45)
-    out = w.call("alert_family", {"level": "red", "reason": "glucose 45", "reading_id": r.id})
+    out = w.call("alert_family", {"level": "red", "reading_id": r.id})
     assert out["sent"] and out["level"] == "red"
     assert set(out["notified_member_ids"]) == {c.id for c in w.children}
-    assert all("108/112" in m.text for m in w.outbox.outbox)
+    assert all("Please call now." in m.text for m in w.outbox.outbox)
     assert out["voice_call"] is False  # CALL_PROVIDER=none in tests
     assert w.store.list_alerts(w.parent.id)[0].reading_id == r.id
 
@@ -303,7 +303,7 @@ def test_red_triggers_voice_call_when_enabled(w, monkeypatch):
     get_settings.cache_clear()
     try:
         r = w.confirmed_reading(type="glucose", glucose_mgdl=45)
-        out = w.call("alert_family", {"level": "red", "reason": "glucose 45", "reading_id": r.id})
+        out = w.call("alert_family", {"level": "red", "reading_id": r.id})
         assert out["voice_call"] is True
         assert {m.kind for m in w.outbox.outbox} == {"message", "voice_call"}
     finally:
@@ -314,13 +314,13 @@ def test_red_triggers_voice_call_when_enabled(w, monkeypatch):
 def test_alert_refused_when_no_limit_crossed(w):
     r = w.confirmed_reading(type="glucose", glucose_mgdl=110)
     with pytest.raises(ToolError, match="No limit"):
-        w.call("alert_family", {"level": "amber", "reason": "check", "reading_id": r.id})
+        w.call("alert_family", {"level": "amber", "reading_id": r.id})
 
 
 def test_llm_cannot_escalate_amber_to_red(w):
     r = w.confirmed_reading(type="glucose", glucose_mgdl=60)
     with pytest.raises(ToolError, match="evaluated amber"):
-        w.call("alert_family", {"level": "red", "reason": "glucose 60", "reading_id": r.id})
+        w.call("alert_family", {"level": "red", "reading_id": r.id})
 
 
 def test_first_severe_bp_is_not_sent_then_repeat_goes_red(w):
@@ -328,68 +328,71 @@ def test_first_severe_bp_is_not_sent_then_repeat_goes_red(w):
         type="bp", systolic=184, diastolic=98, created_at=utcnow() - timedelta(minutes=6)
     )
     with pytest.raises(ToolError, match="Waiting for the repeat reading"):
-        w.call("alert_family", {"level": "amber", "reason": "bp", "reading_id": first.id})
+        w.call("alert_family", {"level": "amber", "reading_id": first.id})
     assert w.outbox.outbox == []
     repeat = w.confirmed_reading(type="bp", systolic=182, diastolic=97)
     # even if the agent asks for amber, a red evaluation is sent as red
-    out = w.call("alert_family", {"level": "amber", "reason": "bp", "reading_id": repeat.id})
+    out = w.call("alert_family", {"level": "amber", "reading_id": repeat.id})
     assert out["level"] == "red"
 
 
 def test_amber_is_rate_capped_but_red_is_not(w):
     for _ in range(3):
         r = w.confirmed_reading(type="glucose", glucose_mgdl=60)
-        assert w.call("alert_family", {"level": "amber", "reason": "g", "reading_id": r.id})["sent"]
+        assert w.call("alert_family", {"level": "amber", "reading_id": r.id})["sent"]
     r = w.confirmed_reading(type="glucose", glucose_mgdl=60)
-    capped = w.call("alert_family", {"level": "amber", "reason": "g", "reading_id": r.id})
+    capped = w.call("alert_family", {"level": "amber", "reading_id": r.id})
     assert capped["sent"] is False and capped["suppressed"] is True
     red = w.confirmed_reading(type="glucose", glucose_mgdl=40)
-    assert w.call("alert_family", {"level": "red", "reason": "g", "reading_id": red.id})["sent"]
+    assert w.call("alert_family", {"level": "red", "reading_id": red.id})["sent"]
 
 
 def test_same_reading_is_not_alerted_twice(w):
     r = w.confirmed_reading(type="glucose", glucose_mgdl=40)
-    first = w.call("alert_family", {"level": "red", "reason": "g", "reading_id": r.id})
-    again = w.call("alert_family", {"level": "red", "reason": "g", "reading_id": r.id})
-    assert again == {"sent": False, "already_sent": True, "alert_id": first["alert_id"]}
+    first = w.call("alert_family", {"level": "red", "reading_id": r.id})
+    again = w.call("alert_family", {"level": "red", "reading_id": r.id})
+    assert again["sent"] is False and again["already_sent"] is True
+    assert again["alert_id"] == first["alert_id"]
 
 
-def test_alert_reason_with_diagnosis_words_is_refused(w):
+def test_alert_family_takes_no_free_text_reason(w):
     r = w.confirmed_reading(type="glucose", glucose_mgdl=40)
-    with pytest.raises(ToolError, match="without diagnosis"):
+    with pytest.raises(ToolError, match="reason"):
         w.call(
             "alert_family",
-            {"level": "red", "reason": "Her diabetes is worsening", "reading_id": r.id},
+            {"level": "red", "reading_id": r.id, "reason": "Her diabetes is worsening"},
         )
+    assert w.outbox.outbox == []
 
 
-def test_family_never_sees_llm_reason_text(w):
+def test_family_only_sees_server_written_text(w):
     r = w.confirmed_reading(type="glucose", glucose_mgdl=40)
-    w.call("alert_family", {"level": "red", "reason": "SECRET-AGENT-NOTE", "reading_id": r.id})
-    assert all("SECRET-AGENT-NOTE" not in m.text for m in w.outbox.outbox)
+    w.call("alert_family", {"level": "red", "reading_id": r.id})
+    texts = [m.text for m in w.outbox.outbox]
+    assert texts and all("below the limit their doctor set" in t for t in texts)
 
 
 def test_missed_doses_alert_without_reading(w):
     with pytest.raises(ToolError, match="No limit"):
-        w.call("alert_family", {"level": "amber", "reason": "missed"})
+        w.call("alert_family", {"level": "amber"})
     now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
     start = now_ist.replace(hour=0, minute=30, second=0, microsecond=0)
     for h in (0, 1):
         w.store.add_dose_event(
             DoseEvent(medicine_id=w.telma.id, due_at=start + timedelta(hours=h), status="missed")
         )
-    out = w.call("alert_family", {"level": "amber", "reason": "missed"})
+    out = w.call("alert_family", {"level": "amber"})
     assert out["sent"] and out["rule"] == "missed_doses_per_day"
     with pytest.raises(ToolError):
-        w.call("alert_family", {"level": "red", "reason": "missed"})
+        w.call("alert_family", {"level": "red"})
 
 
 def test_per_parent_threshold_changes_alerting(w):
     r = w.confirmed_reading(type="glucose", glucose_mgdl=230)
     with pytest.raises(ToolError, match="No limit"):
-        w.call("alert_family", {"level": "amber", "reason": "high", "reading_id": r.id})
+        w.call("alert_family", {"level": "amber", "reading_id": r.id})
     w.store.set_threshold(w.parent.id, "glucose_amber_above", 220)
-    assert w.call("alert_family", {"level": "amber", "reason": "high", "reading_id": r.id})["sent"]
+    assert w.call("alert_family", {"level": "amber", "reading_id": r.id})["sent"]
 
 
 # ---------- request_refill ----------
@@ -440,7 +443,7 @@ def test_refill_refused_when_parent_does_not_share_medicines(w):
 def test_amber_not_sent_when_parent_does_not_share_alerts(w):
     w.store.set_sharing(Sharing(parent_id=w.parent.id, alerts=False))
     r = w.confirmed_reading(type="glucose", glucose_mgdl=60)  # amber (54-69)
-    out = w.call("alert_family", {"level": "amber", "reason": "glucose 60", "reading_id": r.id})
+    out = w.call("alert_family", {"level": "amber", "reading_id": r.id})
     assert out["sent"] is False and out["not_shared"] is True
     assert w.outbox.outbox == [] and w.store.list_alerts(w.parent.id) == []
 
@@ -448,10 +451,10 @@ def test_amber_not_sent_when_parent_does_not_share_alerts(w):
 def test_red_always_reaches_the_family_even_when_alerts_not_shared(w):
     w.store.set_sharing(Sharing(parent_id=w.parent.id, alerts=False))
     r = w.confirmed_reading(type="glucose", glucose_mgdl=45)  # red (< 54)
-    out = w.call("alert_family", {"level": "red", "reason": "glucose 45", "reading_id": r.id})
+    out = w.call("alert_family", {"level": "red", "reading_id": r.id})
     assert out["sent"] is True and out["level"] == "red"
     assert {m.member_id for m in w.outbox.outbox} == {c.id for c in w.children}
-    assert all("108/112" in m.text for m in w.outbox.outbox)
+    assert all("Please call now." in m.text for m in w.outbox.outbox)
 
 
 # ---------- weekly_summary ----------
@@ -537,8 +540,8 @@ def test_first_severe_bp_without_repeat_is_amber_after_15_minutes(w):
         type="bp", systolic=186, diastolic=122, created_at=utcnow() - timedelta(minutes=16)
     )
     with pytest.raises(ToolError, match="evaluated amber"):  # no escalation to red
-        w.call("alert_family", {"level": "red", "reason": "bp", "reading_id": first.id})
-    out = w.call("alert_family", {"level": "amber", "reason": "bp", "reading_id": first.id})
+        w.call("alert_family", {"level": "red", "reading_id": first.id})
+    out = w.call("alert_family", {"level": "amber", "reading_id": first.id})
     assert out["sent"] and out["rule"] == "bp_severe_no_repeat"
     assert "No repeat reading was taken within 15 minutes." in out["message"]
     assert "rest" not in out["message"].lower()
@@ -552,7 +555,7 @@ def test_first_severe_bp_with_a_repeat_taken_gets_no_amber(w):
         type="bp", systolic=150, diastolic=90, created_at=utcnow() - timedelta(minutes=9)
     )
     with pytest.raises(ToolError, match="No limit"):
-        w.call("alert_family", {"level": "amber", "reason": "bp", "reading_id": first.id})
+        w.call("alert_family", {"level": "amber", "reading_id": first.id})
 
 
 # ---------- consent (§6.5) ----------
@@ -566,7 +569,7 @@ def test_first_severe_bp_with_a_repeat_taken_gets_no_amber(w):
         ("get_history", {}),
         ("get_meds", {}),
         ("create_reminder", {"med_id": "x", "times": ["08:00"]}),
-        ("alert_family", {"level": "amber", "reason": "x"}),
+        ("alert_family", {"level": "amber"}),
         ("request_refill", {"med_id": "x", "qty": 10}),
         ("weekly_summary", {}),
     ],

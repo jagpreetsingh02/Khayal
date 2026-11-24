@@ -3,9 +3,15 @@
     idle --photo--> awaiting_confirmation --1--> confirmed -> agent acts
                                           --2--> awaiting_value --photo/typed--> (read back again)
                     (30 min without an answer -> reading expired, back to idle)
-    first BP at/above 180/120 confirmed -> awaiting_repeat: nobody is alerted yet; the parent
-        rests 5 minutes and sends a repeat. Confirmed repeat still severe -> red to family.
-        No confirmed repeat 15 minutes after the first -> amber "no repeat taken" (tick()).
+    BP at/above 180/120 confirmed -> awaiting_symptoms (2025 AHA/ACC): one yes/no warning-signs
+        question before anything else. 1 = RED to family at once + "call 108/112".
+        2 (or no reply in 5 min, audited) -> awaiting_repeat: rest 5 minutes and repeat.
+        Confirmed repeat still severe -> the question again; 2 / no reply -> RED "urgent:
+        contact the doctor today". No confirmed repeat 15 minutes after the first -> amber.
+    glucose below 70 confirmed (ADA 2026) -> family alert (< 54 red, 54-69 amber), the
+        doctor's own low-sugar plan, a request to recheck in 15 minutes, then
+        awaiting_symptoms: "did you faint / feel confused / need help?" 1 = RED.
+        54-69 with no confirmed recheck in 15 minutes -> amber "no recheck" (tick()).
     medicine strip --> awaiting_med_confirmation --1--> reminder at 8 PM
                                                  --2--> awaiting_med_time --"21:30"--> reminder
 
@@ -19,6 +25,7 @@ Rules that hold on every path:
 - Photos are read and discarded; only the numbers are stored.
 """
 
+import json
 import logging
 import math
 from collections.abc import Callable
@@ -26,16 +33,24 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from app.agent.rule_agent import Agent
-from app.alerts.thresholds import BP_REPEAT_MAX, BP_REPEAT_MIN, BP_REPEAT_WAIT
+from app.alerts.evaluate import evaluate_confirmed_reading
+from app.alerts.thresholds import (
+    BP_REPEAT_MAX,
+    BP_REPEAT_MIN,
+    BP_REPEAT_WAIT,
+    GLUCOSE_RECHECK_WAIT,
+    SYMPTOM_WAIT,
+)
 from app.conversation import parse
 from app.conversation import templates as tpl
 from app.conversation.messages import Incoming, Outgoing, Voice
 from app.reader.base import Reader, ReaderError
 from app.reader.intake import build_reading
-from app.reader.schema import ImageInput
-from app.reader.strips import match_strip
+from app.reader.schema import UNKNOWN_MEDICINE, ImageInput, StripCandidate
+from app.reader.strips import catalog_id, catalog_label, find_catalog, load_brands
 from app.storage.base import Store
 from app.storage.models import (
+    AuditEntry,
     ConversationState,
     DoseStatus,
     Medicine,
@@ -43,6 +58,7 @@ from app.storage.models import (
     OutboxMessage,
     ReadingSource,
     ReadingType,
+    SymptomAnswer,
     utcnow,
 )
 from app.voice import phrases
@@ -53,12 +69,20 @@ IDLE = "idle"
 AWAITING_CONFIRMATION = "awaiting_confirmation"
 AWAITING_VALUE = "awaiting_value"
 AWAITING_REPEAT = "awaiting_repeat"
+AWAITING_SYMPTOMS = "awaiting_symptoms"
 AWAITING_MED_CONFIRMATION = "awaiting_med_confirmation"
 AWAITING_MED_TIME = "awaiting_med_time"
 
 ANSWER_TIMEOUT = timedelta(minutes=30)
 DOSE_REPLY_WINDOW = timedelta(hours=3)
 DEFAULT_REMINDER = "20:00"
+# Timers that outlive a single question: the repeat BP and the glucose recheck.
+TIMER_KEYS = ("repeat", "recheck")
+LOW_GLUCOSE_RULES = ("glucose_red_below", "glucose_amber_below")
+
+
+def _timers(payload: dict) -> dict:
+    return {k: payload[k] for k in TIMER_KEYS if payload.get(k)}
 
 
 class Said(str):
@@ -147,7 +171,7 @@ class ConversationEngine:
         return [
             s.member_id
             for s in self.store.list_conversation_states()
-            if s.payload.get("expires_at") or s.payload.get("repeat")
+            if s.payload.get("expires_at") or _timers(s.payload)
         ]
 
     def tick(self, now: datetime | None = None) -> list[Outgoing]:
@@ -236,40 +260,81 @@ class ConversationEngine:
         return out + self._route(parent, state, msg, t, now, source)
 
     def _due(self, parent: Member, now: datetime) -> list[str]:
-        return self._missed_repeat(parent, now) + self._expire(parent, now)
+        return (
+            self._symptom_timeout(parent, now)
+            + self._missed_repeat(parent, now)
+            + self._missed_recheck(parent, now)
+            + self._expire(parent, now)
+        )
+
+    def _symptom_timeout(self, parent: Member, now: datetime) -> list[str]:
+        """No answer to the warning-signs question in 5 minutes: carry on as if "no" (rest
+        and repeat), and note it in the audit log."""
+        state = self.store.get_conversation_state(parent.id)
+        if state.state != AWAITING_SYMPTOMS or now <= _ts(state.payload["expires_at"]):
+            return []
+        return self._symptom_answer(parent, state.payload, "no_reply", now)
 
     def _missed_repeat(self, parent: Member, now: datetime) -> list[str]:
         """15 minutes after a first severe BP without a confirmed repeat: amber to family."""
         state = self.store.get_conversation_state(parent.id)
-        repeat = state.payload.get("repeat")
+        timers = _timers(state.payload)
+        repeat = timers.get("repeat")
         if not repeat or repeat.get("amber_done") or now < _ts(repeat["amber_at"]):
             return []
-        if state.state == AWAITING_CONFIRMATION and state.payload.get("is_repeat"):
+        p = state.payload
+        reading_back = state.state == AWAITING_CONFIRMATION and p.get("is_repeat")
+        if reading_back and p.get("type", "bp") == "bp":
             return []  # the repeat is being read back; it decides
         reading = self.store.get_reading(repeat["first_reading_id"])
         outcome = self.agent.after_missed_repeat(parent, reading)
-        self._save(parent, state.state, state.payload, repeat | {"amber_done": True})
+        timers["repeat"] = repeat | {"amber_done": True}
+        self._save(parent, state.state, state.payload, timers)
         template = tpl.NO_REPEAT_FAMILY_TOLD if outcome.alert_sent else tpl.NO_REPEAT_NOT_REACHED
         if outcome.not_shared:
             template = tpl.NO_REPEAT_NOT_SHARED
         return [template.format(value=repeat.get("value", ""))]
 
+    def _missed_recheck(self, parent: Member, now: datetime) -> list[str]:
+        """15 minutes after a low (54-69) sugar without a confirmed recheck: amber to family."""
+        state = self.store.get_conversation_state(parent.id)
+        timers = _timers(state.payload)
+        recheck = timers.get("recheck")
+        if not recheck or recheck.get("alert_done") or now < _ts(recheck["alert_at"]):
+            return []
+        p = state.payload
+        reading_back = state.state == AWAITING_CONFIRMATION and p.get("is_repeat")
+        if reading_back and p.get("type") == "glucose":
+            return []  # the recheck is being read back; it decides
+        reading = self.store.get_reading(recheck["first_reading_id"])
+        outcome = self.agent.after_missed_recheck(parent, reading)
+        timers["recheck"] = recheck | {"alert_done": True}
+        self._save(parent, state.state, state.payload, timers)
+        template = tpl.NO_RECHECK_FAMILY_TOLD if outcome.alert_sent else tpl.NO_RECHECK_NOT_REACHED
+        if outcome.not_shared:
+            template = tpl.NO_RECHECK_NOT_SHARED
+        return [template.format(value=recheck.get("value", ""))]
+
     def _expire(self, parent: Member, now: datetime) -> list[str]:
         state = self.store.get_conversation_state(parent.id)
         p = dict(state.payload)
-        repeat = p.get("repeat")
+        timers = _timers(p)
         changed, out = False, []
-        if repeat and now > _ts(repeat["expires_at"]):
-            repeat, changed = None, True
+        for key, timer in list(timers.items()):
+            if now > _ts(timer["expires_at"]):
+                timers.pop(key)
+                changed = True
         expires = p.get("expires_at")
-        if expires and now > _ts(expires):
+        if expires and now > _ts(expires) and state.state != AWAITING_SYMPTOMS:
             if state.state == AWAITING_CONFIRMATION:
                 self.store.set_reading_status(p["reading_id"], "expired", at=now)
                 out.append(tpl.EXPIRED.format(value=p["value"]))
-            self._rest(parent, repeat)
+            self._rest(parent, timers)
         elif changed:
-            p.pop("repeat", None)
-            self._save(parent, state.state if state.state != AWAITING_REPEAT else IDLE, p, None)
+            new_state = state.state
+            if new_state == AWAITING_REPEAT and not timers.get("repeat"):
+                new_state = IDLE
+            self._save(parent, new_state, p, timers)
         return out
 
     def _discard_pending(self, parent: Member) -> None:
@@ -290,7 +355,18 @@ class ConversationEngine:
         source: ReadingSource = "manual",
     ) -> list[str]:
         p = state.payload
-        repeat = p.get("repeat")
+        repeat = _timers(p)
+        if state.state == AWAITING_SYMPTOMS:
+            if msg.image is None and parse.is_yes(t):
+                return self._symptom_answer(parent, p, "yes", now)
+            if msg.image is None and parse.is_no(t):
+                return self._symptom_answer(parent, p, "no", now)
+            lang = phrases.lang_of(parent.language)
+            if p.get("kind") == "glucose":  # e.g. the recheck arrived: carry on with it
+                out = self._symptom_answer(parent, p, "no_reply", now)
+                fresh = self.store.get_conversation_state(parent.id)
+                return out + self._route(parent, fresh, msg, t, now, source)
+            return [Said(tpl.SYMPTOM_PLEASE_ANSWER, phrases.say("symptom_check_bp", lang))]
         if msg.image is not None:
             if state.state == AWAITING_CONFIRMATION:  # a new photo replaces the old reading
                 self.store.set_reading_status(p["reading_id"], "rejected", at=now)
@@ -421,7 +497,7 @@ class ConversationEngine:
     def _new_reading(
         self,
         parent: Member,
-        repeat: dict | None,
+        timers: dict | None,
         type: ReadingType,
         values: dict[str, Any],
         *,
@@ -429,73 +505,178 @@ class ConversationEngine:
         now: datetime,
         shown: str | None = None,
     ) -> list[str]:
-        is_repeat = repeat is not None and type == "bp"
-        if repeat is not None and is_repeat and now < _ts(repeat["due_at"]):
+        timers = dict(timers or {})
+        repeat = timers.get("repeat") if type == "bp" else None
+        is_repeat = bool(repeat) or (type == "glucose" and bool(timers.get("recheck")))
+        if repeat and now < _ts(repeat["due_at"]):
             minutes = math.ceil((_ts(repeat["due_at"]) - now).total_seconds() / 60)
-            self._rest(parent, repeat)
+            self._rest(parent, timers)
             return [tpl.REPEAT_TOO_SOON.format(minutes=minutes)]
         reading, check = build_reading(
             self.store, parent.id, type, source=source, now=now, **values
         )
         if reading is None:
             log.info("implausible reading for parent %s: %s", parent.id, check.problems)
-            self._rest(parent, repeat)
+            self._rest(parent, timers)
             return [tpl.retake_message([], prefix=tpl.IMPLAUSIBLE)]
         self.store.add_reading(reading)
         value = tpl.format_value(reading, shown)
         payload = {
             "reading_id": reading.id,
             "value": value,
+            "type": type,
             "is_repeat": is_repeat,
             "expires_at": _iso(now + ANSWER_TIMEOUT),
         }
-        self._save(parent, AWAITING_CONFIRMATION, payload, repeat)
+        self._save(parent, AWAITING_CONFIRMATION, payload, timers)
         lang = phrases.lang_of(parent.language)
         spoken = phrases.spoken_reading(
             reading.type,
             lang,
             systolic=reading.systolic,
             diastolic=reading.diastolic,
-            glucose=(shown or f"{reading.glucose_mgdl:g}") if reading.glucose_mgdl else None,
+            glucose=(shown or reading.display or f"{reading.glucose_mgdl:g}")
+            if reading.glucose_mgdl
+            else None,
         )
         voice = phrases.say("read_back", lang, spoken=spoken)
         return [Said(tpl.read_back(value, unusual=bool(check.flags)), voice)]
 
     def _confirm_reading(self, parent: Member, p: dict, now: datetime) -> list[str]:
         reading = self.store.set_reading_status(p["reading_id"], "confirmed", at=now)
-        outcome = self.agent.after_confirmed_reading(parent, reading)
+        timers = _timers(p)
+        if p.get("is_repeat"):  # this reading answers the repeat / recheck it was waiting for
+            timers.pop("repeat" if reading.type == "bp" else "recheck", None)
         value = p["value"]
-        if outcome.ask_repeat:  # first reading at/above the severe limit: nobody alerted yet
-            repeat = {
-                "first_reading_id": reading.id,
-                "value": value,
-                "due_at": _iso(reading.created_at + BP_REPEAT_MIN),
-                "amber_at": _iso(reading.created_at + BP_REPEAT_WAIT),
-                "expires_at": _iso(reading.created_at + BP_REPEAT_MAX),
-            }
-            self._save(parent, AWAITING_REPEAT, {}, repeat)
-            return [tpl.REPEAT_ASK.format(value=value)]
+        lang = phrases.lang_of(parent.language)
+        evaluation = evaluate_confirmed_reading(self.store, reading)
 
-        still_waiting = None if p.get("is_repeat") else p.get("repeat")
-        self._rest(parent, still_waiting)
-        if outcome.alert_sent:
-            family = "I have told your family."
-        elif outcome.not_shared:
-            family = "You chose not to share alerts, so your family was not told."
-        else:
-            family = "I could not reach your family just now."
+        # Severe BP: the warning-signs question comes before anything else (2025 AHA/ACC).
+        if evaluation.rule in ("bp_severe_first", "bp_severe_repeat"):
+            stage = "bp_repeat" if evaluation.rule == "bp_severe_repeat" else "bp_first"
+            template = tpl.SYMPTOM_CHECK_BP_REPEAT if stage == "bp_repeat" else tpl.SYMPTOM_CHECK_BP
+            self._ask_symptoms(parent, reading.id, value, stage, now, timers)
+            return [Said(template.format(value=value), phrases.say("symptom_check_bp", lang))]
 
+        outcome = self.agent.after_confirmed_reading(parent, reading)
+        family = tpl.family_line(outcome.alert_sent, outcome.not_shared)
+
+        # Low sugar (ADA 2026): family alert, the doctor's plan, recheck, then one question.
+        if evaluation.rule in LOW_GLUCOSE_RULES:
+            plan = tpl.plan_line(self.store.get_low_sugar_plan(parent.id))
+            if evaluation.rule == "glucose_amber_below":
+                timers["recheck"] = {
+                    "first_reading_id": reading.id,
+                    "value": value,
+                    "alert_at": _iso(reading.created_at + GLUCOSE_RECHECK_WAIT),
+                    "expires_at": _iso(reading.created_at + BP_REPEAT_MAX),
+                }
+                template = tpl.FAMILY_TOLD if outcome.alert_sent else tpl.FAMILY_NOT_REACHED
+                if outcome.not_shared:
+                    template = tpl.FAMILY_NOT_SHARED
+                first = f"{template.format(value=value)} {plan} {tpl.RECHECK_ASK}"
+            else:
+                first = tpl.LOW_RED.format(value=value, family=family, plan=plan)
+            self._ask_symptoms(parent, reading.id, value, "glucose", now, timers)
+            return [
+                Said(first, phrases.say("low_sugar_plan", lang)),
+                Said(tpl.LOW_SUGAR_QUESTION, phrases.say("symptom_check_low", lang)),
+            ]
+
+        self._rest(parent, timers)
         if outcome.level == "red":
-            lead = tpl.RED_REPEAT if outcome.rule == "bp_severe_repeat" else tpl.SAVED
-            return [f"{lead.format(value=value)} {family} {tpl.EMERGENCY}"]
+            return [f"{tpl.SAVED.format(value=value)} {family} {tpl.EMERGENCY}"]
         if outcome.level == "amber":
             template = tpl.FAMILY_TOLD if outcome.alert_sent else tpl.FAMILY_NOT_REACHED
             if outcome.not_shared:
                 template = tpl.FAMILY_NOT_SHARED
             return [template.format(value=value)]
         if p.get("is_repeat"):
-            return [Said(tpl.REPEAT_OK.format(value=value), self._saved_voice(parent))]
+            template = tpl.REPEAT_OK if reading.type == "bp" else tpl.RECHECK_OK
+            return [Said(template.format(value=value), self._saved_voice(parent))]
         return [Said(tpl.SAVED.format(value=value), self._saved_voice(parent))]
+
+    def _ask_symptoms(
+        self, parent: Member, reading_id: str, value: str, kind: str, now: datetime, timers: dict
+    ) -> None:
+        payload = {
+            "reading_id": reading_id,
+            "value": value,
+            "kind": kind,  # bp_first | bp_repeat | glucose
+            "asked_at": _iso(now),
+            "expires_at": _iso(now + SYMPTOM_WAIT),
+        }
+        self._save(parent, AWAITING_SYMPTOMS, payload, timers)
+
+    def _symptom_answer(
+        self, parent: Member, p: dict, answer: SymptomAnswer, now: datetime
+    ) -> list[str]:
+        """The parent's own yes / no (or no reply in 5 minutes). Stored server-side on the
+        reading, where alert_family reads it; a model can never set it."""
+        reading = self.store.set_reading_symptoms(p["reading_id"], answer)
+        kind = p.get("kind", "bp_first")
+        self._audit_symptoms(parent, reading.id, kind, answer, now)
+        timers = _timers(p)
+        lang = phrases.lang_of(parent.language)
+        value = p["value"]
+
+        if kind == "glucose":
+            if answer != "yes":
+                self._rest(parent, timers)
+                if answer == "no_reply":
+                    return []
+                return [Said(tpl.LOW_SUGAR_NO_SIGNS, phrases.say("low_sugar_plan", lang))]
+            timers.pop("recheck", None)  # RED now; the family takes it from here
+            self._rest(parent, timers)
+            outcome = self.agent.after_confirmed_reading(parent, reading)
+            plan = tpl.plan_line(self.store.get_low_sugar_plan(parent.id))
+            family = tpl.family_line(outcome.alert_sent, outcome.not_shared)
+            text = tpl.LOW_SUGAR_HELP.format(family=family, plan=plan)
+            return [Said(text, phrases.say("low_sugar_help", lang))]
+
+        if answer == "yes":  # warning signs: RED at once, no repeat
+            timers.pop("repeat", None)
+            self._rest(parent, timers)
+            outcome = self.agent.after_confirmed_reading(parent, reading)
+            family = tpl.family_line(outcome.alert_sent, outcome.not_shared)
+            return [Said(tpl.BP_CALL_NOW.format(family=family), phrases.say("call_108", lang))]
+
+        if kind == "bp_first":  # no signs (or no reply): rest and repeat, as before
+            timers["repeat"] = {
+                "first_reading_id": reading.id,
+                "value": value,
+                "due_at": _iso(reading.created_at + BP_REPEAT_MIN),
+                "amber_at": _iso(reading.created_at + BP_REPEAT_WAIT),
+                "expires_at": _iso(reading.created_at + BP_REPEAT_MAX),
+            }
+            self._rest(parent, timers)
+            template = tpl.REPEAT_ASK_NO_REPLY if answer == "no_reply" else tpl.REPEAT_ASK
+            return [Said(template, phrases.say("rest_repeat", lang))]
+
+        # A confirmed repeat, still severe, without warning signs: RED "contact the doctor
+        # today" (no ambulance wording for the family).
+        self._rest(parent, timers)
+        outcome = self.agent.after_confirmed_reading(parent, reading)
+        family = tpl.family_line(outcome.alert_sent, outcome.not_shared)
+        text = tpl.RED_REPEAT_URGENT.format(value=value, family=family)
+        return [Said(text, phrases.say("contact_doctor", lang))]
+
+    def _audit_symptoms(
+        self, parent: Member, reading_id: str, kind: str, answer: SymptomAnswer, now: datetime
+    ) -> None:
+        self.store.add_audit(
+            AuditEntry(
+                actor="system" if answer == "no_reply" else "member",
+                tool="conversation:symptom_check",
+                args_json=json.dumps({"reading_id": reading_id, "question": kind}),
+                result_json=json.dumps(
+                    {"answer": answer}
+                    | ({"note": "no reply within 5 minutes"} if answer == "no_reply" else {})
+                ),
+                parent_id=parent.id,
+                created_at=now,
+            )
+        )
 
     @staticmethod
     def _saved_voice(parent: Member) -> Voice:
@@ -504,37 +685,66 @@ class ConversationEngine:
     def _reject_reading(self, parent: Member, p: dict, now: datetime) -> list[str]:
         reading = self.store.set_reading_status(p["reading_id"], "rejected", at=now)
         payload = {"type": reading.type, "expires_at": _iso(now + ANSWER_TIMEOUT)}
-        self._save(parent, AWAITING_VALUE, payload, p.get("repeat"))
+        self._save(parent, AWAITING_VALUE, payload, _timers(p))
         return [tpl.REJECTED]
 
     # --- medicine strips ---
 
+    def _strip_candidates(self, parent: Member) -> list[StripCandidate]:
+        """What a strip photo may turn into: the parent's own medicines, then the curated
+        brand list. Labels come from our data, never from the photo."""
+        own = [
+            StripCandidate(id=m.id, label=f"{m.brand} ({m.generic} {m.strength})")
+            for m in self.store.list_medicines(parent.id)
+        ]
+        names = {m.label.split(" (")[0].lower() for m in own}
+        catalog = [
+            StripCandidate(id=catalog_id(r), label=catalog_label(r))
+            for r in load_brands()
+            if r.display_name.lower() not in names
+        ]
+        return own + catalog
+
     def _strip(
-        self, parent: Member, repeat: dict | None, image: ImageInput, now: datetime
+        self, parent: Member, timers: dict | None, image: ImageInput, now: datetime
     ) -> list[str]:
         try:
-            strip = self.reader.read_strip(image)
+            strip = self.reader.read_strip(image, self._strip_candidates(parent))
         except ReaderError:
             log.warning("strip reader failed for parent %s", parent.id, exc_info=True)
-            self._rest(parent, repeat)
+            self._rest(parent, timers)
             return [tpl.READ_FAILED]
-        if not strip.legible or not strip.brand:
-            self._rest(parent, repeat)
+        if not strip.legible:
+            self._rest(parent, timers)
             return [tpl.STRIP_UNREADABLE]
-        match = match_strip(strip.brand, strip.strength)
-        if match is None:
-            self._rest(parent, repeat)
-            seen = " ".join(x for x in (strip.brand, strip.strength) if x)
-            return [tpl.STRIP_UNKNOWN.format(seen=seen)]
-        row = match.row
-        payload = {
-            "name": row.display_name,
-            "generic": row.generic,
-            "strength": row.generic_strength,
-            "label": row.generic_label,
-        }
-        self._save(parent, AWAITING_MED_CONFIRMATION, self._med_payload(payload, now), repeat)
-        return [tpl.STRIP_READ_BACK.format(name=row.display_name, generic=row.generic_label)]
+        payload: dict[str, str] | None = None
+        if strip.medicine_id.startswith("med_"):
+            med = next(
+                (m for m in self.store.list_medicines(parent.id) if m.id == strip.medicine_id),
+                None,
+            )
+            if med is not None:
+                label = f"{med.generic} {med.strength}"
+                payload = {
+                    "name": med.brand,
+                    "generic": med.generic,
+                    "strength": med.strength,
+                    "label": label,
+                }
+        elif strip.medicine_id != UNKNOWN_MEDICINE:
+            row = find_catalog(strip.medicine_id)
+            if row is not None:
+                payload = {
+                    "name": row.display_name,
+                    "generic": row.generic,
+                    "strength": row.generic_strength,
+                    "label": row.generic_label,
+                }
+        if payload is None:
+            self._rest(parent, timers)
+            return [tpl.STRIP_UNKNOWN]
+        self._save(parent, AWAITING_MED_CONFIRMATION, self._med_payload(payload, now), timers)
+        return [tpl.STRIP_READ_BACK.format(name=payload["name"], generic=payload["label"])]
 
     @staticmethod
     def _med_payload(p: dict, now: datetime) -> dict:
@@ -559,7 +769,7 @@ class ConversationEngine:
             )
         elif not med.confirmed:
             med = self.store.confirm_medicine(med.id)
-        self._rest(parent, p.get("repeat"))
+        self._rest(parent, _timers(p))
         try:
             final = self.agent.set_reminder(parent, med.id, sorted(set(med.times) | set(times)))
         except Exception:
@@ -570,17 +780,19 @@ class ConversationEngine:
 
     # --- helpers ---
 
-    def _save(self, parent: Member, state: str, payload: dict, repeat: dict | None) -> None:
-        payload = {k: v for k, v in payload.items() if k != "repeat"}
-        if repeat:
-            payload["repeat"] = repeat
+    def _save(self, parent: Member, state: str, payload: dict, timers: dict | None) -> None:
+        """`timers` = the running repeat-BP / glucose-recheck timers ({} or None: none)."""
+        payload = {k: v for k, v in payload.items() if k not in TIMER_KEYS}
+        payload |= {k: v for k, v in (timers or {}).items() if k in TIMER_KEYS and v}
         self.store.set_conversation_state(
             ConversationState(member_id=parent.id, state=state, payload=payload)
         )
 
-    def _rest(self, parent: Member, repeat: dict | None) -> None:
-        """Nothing waiting for an answer: idle, or still waiting for a repeat BP reading."""
-        self._save(parent, AWAITING_REPEAT if repeat else IDLE, {}, repeat)
+    def _rest(self, parent: Member, timers: dict | None) -> None:
+        """Nothing waiting for an answer: idle, or still waiting for a repeat BP reading
+        (a glucose recheck timer runs in the background while idle)."""
+        timers = timers or {}
+        self._save(parent, AWAITING_REPEAT if timers.get("repeat") else IDLE, {}, timers)
 
     def _to(self, member: Member, text: str, voice: Voice | None = None) -> Outgoing:
         return Outgoing(

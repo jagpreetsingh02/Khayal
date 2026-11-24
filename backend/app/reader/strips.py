@@ -39,6 +39,20 @@ class BrandRow(BaseModel):
         return " + ".join(f"{n} {d}" for n, d in zip(names, doses, strict=True))
 
 
+def catalog_id(row: BrandRow) -> str:
+    """Stable id of a curated row: "Telma 40" -> "cat:telma-40"."""
+    slug = re.sub(r"[^a-z0-9]+", "-", row.display_name.lower()).strip("-")
+    return f"cat:{slug[:40]}"
+
+
+def catalog_label(row: BrandRow) -> str:
+    return f"{row.display_name} ({row.generic_label})"
+
+
+def find_catalog(med_id: str, rows: tuple[BrandRow, ...] | None = None) -> BrandRow | None:
+    return next((r for r in (rows or load_brands()) if catalog_id(r) == med_id), None)
+
+
 class StripMatch(BaseModel):
     row: BrandRow
     score: float

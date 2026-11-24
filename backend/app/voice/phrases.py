@@ -58,13 +58,64 @@ PHRASES: dict[str, dict[str, str]] = {
         "hi": "मैं सिर्फ़ रीडिंग और दवाइयों में मदद कर सकता हूँ।",
         "ta": "அளவீடுகள் மற்றும் மருந்துகளுக்கு மட்டுமே என்னால் உதவ முடியும்.",
     },
+    # Severe BP: the warning-signs question (2025 AHA/ACC), and what to do on "yes".
+    "symptom_check_bp": {
+        "en": "Do you have chest pain, breathlessness, weakness or numbness on one side, "
+        "slurred speech, a severe headache, confusion, or sudden vision problems right now? "
+        "Reply 1 for yes, 2 for no.",
+        "hi": "क्या अभी आपको सीने में दर्द, साँस फूलना, एक तरफ़ कमज़ोरी या सुन्नपन, बोलने में "
+        "दिक्कत, तेज़ सिरदर्द, उलझन, या अचानक देखने में परेशानी है? हाँ के लिए 1, नहीं के लिए 2 "
+        "भेजिए।",
+        "ta": "இப்போது நெஞ்சு வலி, மூச்சுத் திணறல், ஒரு பக்கம் பலவீனம் அல்லது மரத்துப்போதல், "
+        "பேச்சுக் குழறல், கடும் தலைவலி, குழப்பம், அல்லது திடீர் பார்வைப் பிரச்சனை உள்ளதா? "
+        "ஆம் என்றால் 1, இல்லை என்றால் 2.",
+    },
+    "call_108": {
+        "en": "Please call 108 or 112 now, or ask someone near you to call.",
+        "hi": "कृपया अभी 108 या 112 पर फ़ोन करें, या पास के किसी व्यक्ति से फ़ोन करवाएँ।",
+        "ta": "தயவுசெய்து இப்போதே 108 அல்லது 112 அழையுங்கள், அல்லது அருகில் உள்ளவரை அழைக்கச் சொல்லுங்கள்.",
+    },
+    "rest_repeat": {
+        "en": "Please rest for 5 minutes, then measure again and send the new reading.",
+        "hi": "कृपया 5 मिनट आराम करें, फिर दोबारा नापकर नई रीडिंग भेजें।",
+        "ta": "5 நிமிடம் ஓய்வெடுத்து, மீண்டும் அளந்து புதிய அளவை அனுப்புங்கள்.",
+    },
+    "contact_doctor": {
+        "en": "The repeat reading is still high. Please contact your doctor today.",
+        "hi": "दोबारा की रीडिंग भी ज़्यादा है। कृपया आज ही अपने डॉक्टर से संपर्क करें।",
+        "ta": "மீண்டும் எடுத்த அளவும் அதிகமாக உள்ளது. இன்றே உங்கள் மருத்துவரைத் தொடர்பு கொள்ளுங்கள்.",
+    },
+    # Low sugar: guidance is only the doctor's plan (sent as text); the voice says where it is.
+    "symptom_check_low": {
+        "en": "Did you faint, feel confused, or did someone have to help you? "
+        "Reply 1 for yes, 2 for no.",
+        "hi": "क्या आप बेहोश हुए, उलझन हुई, या किसी को आपकी मदद करनी पड़ी? हाँ के लिए 1, "
+        "नहीं के लिए 2 भेजिए।",
+        "ta": "நீங்கள் மயங்கினீர்களா, குழப்பமாக இருந்ததா, அல்லது யாராவது உதவ வேண்டியிருந்ததா? "
+        "ஆம் என்றால் 1, இல்லை என்றால் 2.",
+    },
+    "low_sugar_plan": {
+        "en": "Your sugar is low. Please follow your doctor's plan for low sugar, and check "
+        "again in 15 minutes.",
+        "hi": "आपकी शुगर कम है। कृपया कम शुगर के लिए अपने डॉक्टर की बताई योजना अपनाएँ, और 15 मिनट "
+        "बाद दोबारा जाँचें।",
+        "ta": "உங்கள் சர்க்கரை குறைவாக உள்ளது. குறைந்த சர்க்கரைக்கு உங்கள் மருத்துவரின் திட்டத்தைப் "
+        "பின்பற்றி, 15 நிமிடத்தில் மீண்டும் சோதியுங்கள்.",
+    },
+    "low_sugar_help": {
+        "en": "Please ask someone near you to help now, and call 108 or 112 if you feel faint "
+        "or confused.",
+        "hi": "कृपया अभी पास के किसी व्यक्ति से मदद लें, और बेहोशी या उलझन लगे तो 108 या 112 पर फ़ोन करें।",
+        "ta": "அருகில் உள்ளவரிடம் இப்போதே உதவி கேளுங்கள்; மயக்கம் அல்லது குழப்பம் இருந்தால் 108 "
+        "அல்லது 112 அழையுங்கள்.",
+    },
     # Red-alert call to a family member. English carries the server's alert text; other
     # languages use a fixed sentence (no numbers) so nothing is mistranslated.
     "red_call": {
         "en": "This is Khayal with an urgent alert about {parent}. {reason} "
         "Please call {parent} now.",
-        "hi": "यह Khayal की ज़रूरी सूचना है। {parent} की रीडिंग डॉक्टर की तय सीमा से ऊपर "
-        "है। कृपया अभी {parent} को फ़ोन करें।",
+        "hi": "यह Khayal की ज़रूरी सूचना है। {parent} की रीडिंग उनके डॉक्टर की तय सीमा से "
+        "बाहर है। कृपया अभी {parent} को फ़ोन करें।",
     },
 }
 

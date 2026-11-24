@@ -11,6 +11,10 @@ pair stored in `members`. Examples (run from backend/, servers may be running):
 
 New members join the family of the simulator's demo parent (created if missing). A new
 parent starts with consent pending, so their first message gets the consent notice.
+Onboarding a parent can also set how family texts refer to them (--pronoun she|he|they:
+"the limit her doctor set") and the doctor's plan for low sugar (--low-sugar-plan "...",
+sent word for word after a low reading). Names and the plan are checked: no links, phone
+numbers or instructions.
 """
 
 import argparse
@@ -25,12 +29,20 @@ from app.storage.base import Store  # noqa: E402
 from app.storage.models import Member  # noqa: E402
 
 
-def add_member(store: Store, channel: str, ref: str, role: str, name: str) -> Member:
+def add_member(
+    store: Store,
+    channel: str,
+    ref: str,
+    role: str,
+    name: str,
+    pronoun: str = "they",
+    low_sugar_plan: str | None = None,
+) -> Member:
     ref = ref.removeprefix("whatsapp:").strip()
     if store.find_member_by_channel(channel, ref):
         raise ValueError(f"{channel} {ref} is already registered")
     family_id = ensure_demo_family(store).family_id
-    return store.add_member(
+    member = store.add_member(
         Member(
             family_id=family_id,
             role=role,
@@ -38,8 +50,12 @@ def add_member(store: Store, channel: str, ref: str, role: str, name: str) -> Me
             channel=channel,
             channel_ref=ref,
             consent_status="pending" if role == "parent" else "granted",
+            pronoun=pronoun,
         )
     )
+    if role == "parent" and low_sugar_plan:
+        store.set_low_sugar_plan(member.id, low_sugar_plan)
+    return member
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -48,9 +64,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ref", required=True, help="Telegram user id or +91... number")
     ap.add_argument("--role", choices=["parent", "child"], required=True)
     ap.add_argument("--name", required=True)
+    ap.add_argument("--pronoun", choices=["she", "he", "they"], default="they")
+    ap.add_argument("--low-sugar-plan", help="the doctor's own words (parents only)")
     args = ap.parse_args(argv)
     try:
-        m = add_member(get_store(), args.channel, args.ref, args.role, args.name)
+        m = add_member(
+            get_store(),
+            args.channel,
+            args.ref,
+            args.role,
+            args.name,
+            args.pronoun,
+            args.low_sugar_plan,
+        )
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 1
