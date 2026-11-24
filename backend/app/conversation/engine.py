@@ -23,12 +23,25 @@ Rules that hold on every path:
   here, server-side, via the store; no MCP tool confirms a reading.
 - `parent_id` always comes from the sender mapping in the store, never from model output.
 - Photos are read and discarded; only the numbers are stored.
+
+Replays (the inbox delivers at least once, app/channels/inbound.py): a message from the
+inbox carries a `Replay` (its inbox id). Before the first side effect the engine saves the
+parent's starting point (conversation state + consent) on the inbox row and marks the state
+with the message id. If the process dies half way, the message is handled again from that
+saved starting point, as long as the mark shows nothing else ran for this parent since. Every
+side effect is safe to repeat: the reading id is derived from the inbox id, status changes
+are written with the message's own time, a dose answered by this message is not counted
+again, one symptom audit per (reading, question), and alert_family sends one alert per
+(reading, rule) (a unique index in the store as well). Replies may be sent again.
 """
 
+import hashlib
 import json
 import logging
 import math
 from collections.abc import Callable
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -48,7 +61,7 @@ from app.reader.base import Reader, ReaderError
 from app.reader.intake import build_reading
 from app.reader.schema import UNKNOWN_MEDICINE, ImageInput, StripCandidate
 from app.reader.strips import catalog_id, catalog_label, find_catalog, load_brands
-from app.storage.base import Store
+from app.storage.base import NotFoundError, Store
 from app.storage.models import (
     AuditEntry,
     ConversationState,
@@ -56,6 +69,7 @@ from app.storage.models import (
     Medicine,
     Member,
     OutboxMessage,
+    Reading,
     ReadingSource,
     ReadingType,
     SymptomAnswer,
@@ -79,6 +93,27 @@ DEFAULT_REMINDER = "20:00"
 # Timers that outlive a single question: the repeat BP and the glucose recheck.
 TIMER_KEYS = ("repeat", "recheck")
 LOW_GLUCOSE_RULES = ("glucose_red_below", "glucose_amber_below")
+# Written into the conversation state by every save made while handling an inbox message.
+MESSAGE_MARK = "_msg"
+_message_key: ContextVar[str | None] = ContextVar("khayal_message_key", default=None)
+
+
+@dataclass
+class Replay:
+    """Handling one inbox message, maybe again (at-least-once delivery).
+
+    key: the inbox id; side effects of this message are keyed on it.
+    snapshot: the parent's starting point saved by an earlier attempt (None: first attempt).
+    save_snapshot: stores the starting point on the inbox row before any side effect."""
+
+    key: str
+    snapshot: dict[str, Any] | None
+    save_snapshot: Callable[[dict[str, Any]], None]
+
+
+def reading_id_for(message_key: str) -> str:
+    """The id of the reading an inbox message creates (at most one per message)."""
+    return "rd_" + hashlib.sha256(message_key.encode()).hexdigest()[:12]
 
 
 def _timers(payload: dict) -> dict:
@@ -125,8 +160,9 @@ class ConversationEngine:
 
     # --- public API ---
 
-    def handle_message(self, msg: Incoming) -> list[Outgoing]:
-        """One incoming message -> replies to the parent plus any family notifications."""
+    def handle_message(self, msg: Incoming, *, replay: Replay | None = None) -> list[Outgoing]:
+        """One incoming message -> replies to the parent plus any family notifications.
+        `replay`: the message comes from the inbox and may be handled more than once."""
         now = msg.received_at or self.clock()
         member = self.store.find_member_by_channel(msg.channel, msg.sender_ref)
         if member is None:
@@ -140,10 +176,41 @@ class ConversationEngine:
             lang = phrases.lang_of(member.language)
             said = Said(tpl.VOICE_UNCLEAR, phrases.say("not_understood", lang))
             return [self._to(member, said, said.voice)]
-        texts = self._handle_parent(member, msg, now)
+        if replay is None:
+            texts = self._handle_parent(member, msg, now)
+        else:
+            token = _message_key.set(replay.key)
+            try:
+                texts = self._handle_parent(self._begin(member, replay), msg, now)
+            finally:
+                _message_key.reset(token)
         return [self._to(member, t, self._reply_voice(member, msg, t)) for t in texts] + (
             self._family()
         )
+
+    def _begin(self, parent: Member, replay: Replay) -> Member:
+        """Before the first side effect: save the starting point, or go back to it when an
+        earlier attempt of this same message was cut short (the mark shows that nothing else
+        ran for this parent since). Returns the parent as the message first saw them."""
+        state = self.store.get_conversation_state(parent.id)
+        snap = replay.snapshot
+        if snap is not None and state.payload.get(MESSAGE_MARK) == replay.key:
+            log.info("message %s handled again from its saved starting point", replay.key)
+            state = state.model_copy(update={"state": snap["state"], "payload": snap["payload"]})
+            parent = parent.model_copy(update={"consent_status": snap["consent"]})
+        else:
+            if snap is not None:  # it failed earlier and other work ran since: start from now
+                log.info("message %s handled again from the current state", replay.key)
+            replay.save_snapshot(
+                {"consent": parent.consent_status, "state": state.state, "payload": state.payload}
+            )
+        payload = {k: v for k, v in state.payload.items() if k != MESSAGE_MARK}
+        self.store.set_conversation_state(
+            ConversationState(
+                member_id=parent.id, state=state.state, payload=payload | {MESSAGE_MARK: replay.key}
+            )
+        )
+        return parent
 
     @staticmethod
     def _reply_voice(member: Member, msg: Incoming, text: str) -> Voice | None:
@@ -409,18 +476,26 @@ class ConversationEngine:
     def _general(self, parent: Member, t: str, now: datetime) -> list[str]:
         lang = phrases.lang_of(parent.language)
         if parse.is_yes(t) or parse.is_no(t) or t in parse.TAKEN:
+            # An inbox message's time is its own (it arrived then), so on a replay the doses
+            # it already answered are the ones with responded_at == now.
+            replaying = _message_key.get() is not None
             events = [
                 e
                 for e in self.store.list_dose_events(
                     parent.id, since=now - DOSE_REPLY_WINDOW, until=now + timedelta(minutes=15)
                 )
-                # unanswered: still pending, or marked missed by the 30-min follow-up
-                if e.status == "pending" or (e.followed_up_at and e.responded_at is None)
+                # unanswered: still pending, or marked missed by the 30-min follow-up; or
+                # answered by this very message (a replay: responded_at is the message's time)
+                if e.status == "pending"
+                or (e.followed_up_at and e.responded_at is None)
+                or (replaying and e.responded_at == now)
             ]
             if not events:
                 return [tpl.NOTHING_TO_CONFIRM]
             status: DoseStatus = "missed" if parse.is_no(t) else "taken"
             for e in events:
+                if replaying and e.responded_at == now and e.status == status:
+                    continue  # already done by this message: stock is not used twice
                 self.store.set_dose_status(e.id, status, at=now)
                 if status == "taken":
                     self._use_stock(e.medicine_id)
@@ -512,14 +587,23 @@ class ConversationEngine:
             minutes = math.ceil((_ts(repeat["due_at"]) - now).total_seconds() / 60)
             self._rest(parent, timers)
             return [tpl.REPEAT_TOO_SOON.format(minutes=minutes)]
-        reading, check = build_reading(
-            self.store, parent.id, type, source=source, now=now, **values
-        )
-        if reading is None:
-            log.info("implausible reading for parent %s: %s", parent.id, check.problems)
-            self._rest(parent, timers)
-            return [tpl.retake_message([], prefix=tpl.IMPLAUSIBLE)]
-        self.store.add_reading(reading)
+        built, check = build_reading(self.store, parent.id, type, source=source, now=now, **values)
+        reading = self._replayed_reading()
+        if reading is not None and reading.status != "unconfirmed":
+            # Stored by an earlier attempt and already answered by a later message: nothing
+            # left for this one to do (its retry ran after newer messages).
+            log.info("reading %s was already %s; not read back again", reading.id, reading.status)
+            return []
+        if reading is None:  # the usual case
+            if built is None:
+                log.info("implausible reading for parent %s: %s", parent.id, check.problems)
+                self._rest(parent, timers)
+                return [tpl.retake_message([], prefix=tpl.IMPLAUSIBLE)]
+            reading = built
+            key = _message_key.get()
+            if key is not None:
+                reading = reading.model_copy(update={"id": reading_id_for(key)})
+            self.store.add_reading(reading)
         value = tpl.format_value(reading, shown)
         payload = {
             "reading_id": reading.id,
@@ -541,6 +625,17 @@ class ConversationEngine:
         )
         voice = phrases.say("read_back", lang, spoken=spoken)
         return [Said(tpl.read_back(value, unusual=bool(check.flags)), voice)]
+
+    def _replayed_reading(self) -> Reading | None:
+        """The reading this inbox message already stored on an earlier attempt, if any. It is
+        kept as it was read then (a second photo read could differ)."""
+        key = _message_key.get()
+        if key is None:
+            return None
+        try:
+            return self.store.get_reading(reading_id_for(key))
+        except NotFoundError:
+            return None
 
     def _confirm_reading(self, parent: Member, p: dict, now: datetime) -> list[str]:
         reading = self.store.set_reading_status(p["reading_id"], "confirmed", at=now)
@@ -664,6 +759,12 @@ class ConversationEngine:
     def _audit_symptoms(
         self, parent: Member, reading_id: str, kind: str, answer: SymptomAnswer, now: datetime
     ) -> None:
+        """One entry per (reading, question): it is asked once, so a second entry can only
+        come from a replayed message."""
+        for e in self.store.list_audit(tool="conversation:symptom_check", parent_id=parent.id):
+            args = json.loads(e.args_json)
+            if args.get("reading_id") == reading_id and args.get("question") == kind:
+                return
         self.store.add_audit(
             AuditEntry(
                 actor="system" if answer == "no_reply" else "member",
@@ -782,8 +883,11 @@ class ConversationEngine:
 
     def _save(self, parent: Member, state: str, payload: dict, timers: dict | None) -> None:
         """`timers` = the running repeat-BP / glucose-recheck timers ({} or None: none)."""
-        payload = {k: v for k, v in payload.items() if k not in TIMER_KEYS}
+        payload = {k: v for k, v in payload.items() if k not in (*TIMER_KEYS, MESSAGE_MARK)}
         payload |= {k: v for k, v in (timers or {}).items() if k in TIMER_KEYS and v}
+        key = _message_key.get()
+        if key is not None:  # written while handling this inbox message (see _begin)
+            payload[MESSAGE_MARK] = key
         self.store.set_conversation_state(
             ConversationState(member_id=parent.id, state=state, payload=payload)
         )

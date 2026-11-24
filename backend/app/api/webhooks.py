@@ -1,5 +1,6 @@
 """Channel webhooks: Twilio WhatsApp (always signature-checked) and optional Telegram.
-Both verify, record the message id, answer immediately and process in the background."""
+Both verify, write the message to the inbox (app/channels/inbound.py), then answer; the
+inbox worker processes it. If the write fails, the request fails and the channel retries."""
 
 import hmac
 import logging
@@ -34,9 +35,9 @@ async def twilio(request: Request) -> Response:
         url += f"?{request.url.query}"
     if not channel.valid_signature(url, form, request.headers.get("X-Twilio-Signature")):
         raise HTTPException(403, "Invalid Twilio signature")
-    # Record MessageSid, then answer at once and process in the background (see
-    # app/channels/inbound.py, including the crash-after-ack gap). A repeated MessageSid
-    # (Twilio retry) gets the same empty answer and is not processed again.
+    # Persist first (the inbox row is also the MessageSid duplicate check), then answer.
+    # A repeated MessageSid (Twilio retry) gets the same empty answer and is not processed
+    # again.
     await request.app.state.inbound.accept("twilio", form, form.get("MessageSid") or None)
     # Replies go out through the REST API (rate-limited), so the TwiML stays empty.
     return Response(EMPTY_TWIML, media_type="text/xml")
@@ -55,6 +56,6 @@ async def telegram(request: Request) -> dict[str, bool]:
     update = await request.json()
     if not isinstance(update, dict):
         raise HTTPException(400, "Expected a Telegram update object")
-    # Same as Twilio: record update_id, answer at once, process in the background.
+    # Same as Twilio: persist (update_id is the duplicate check), then answer.
     await request.app.state.inbound.accept("telegram", update, update_id(update))
     return {"ok": True}

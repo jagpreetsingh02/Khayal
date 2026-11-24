@@ -24,6 +24,12 @@ Reliability (see README "Reliability"):
   text is blanked once delivered, expired or given up, and is kept out of logs and audit_log.
 - Direct replies to the parent's own message are sent at once, inside the parent's turn
   (so replies keep their order), and are not retried.
+- Inbound messages from Twilio / Telegram: written to the store inbox before the channel
+  gets its answer (`accept`), then claimed with a lease and processed (`claim_inbox`,
+  `process`; the worker is app/channels/inbound.py). Failures retry after 5 s, 30 s, 2 min
+  and 10 min; after 5 attempts the message is failed, audited (tool=inbound_failed) and
+  kept. At-least-once: a replayed message is handled from its saved starting point (see
+  ConversationEngine.handle_message). The payload is blanked once done.
 """
 
 import json
@@ -43,7 +49,7 @@ from app.channels.base import Channel, ChannelError
 from app.channels.simulator import SimulatorChannel
 from app.channels.turns import Ticket, Turns
 from app.config import Settings, get_settings
-from app.conversation.engine import ConversationEngine, outbox_to_outgoing
+from app.conversation.engine import ConversationEngine, Replay, outbox_to_outgoing
 from app.conversation.messages import Outgoing
 from app.demo import load_sample
 from app.reader import get_reader
@@ -51,7 +57,7 @@ from app.reader.base import Reader
 from app.scheduler import Scheduler
 from app.storage import get_store
 from app.storage.base import NotFoundError, Store
-from app.storage.models import AuditEntry, OutboxMessage, utcnow
+from app.storage.models import AuditEntry, InboxMessage, OutboxMessage, utcnow
 from app.voice import phrases
 from app.voice.calls import CallProvider, get_call_provider
 from app.voice.stt import STT, get_stt
@@ -68,6 +74,22 @@ OUTBOX_BATCH = 10  # claimed at a time, so a rate-limited channel finishes withi
 RETRY_DELAYS = (30, 60, 120, 300)  # seconds after attempt 1, 2, 3, 4
 RETRY_EVERY = 600  # then every 10 minutes
 MAX_ATTEMPTS = 8  # except red alert messages, which retry until delivered
+
+# Inbox processing
+INBOX_LEASE = timedelta(seconds=60)  # renewed while processing; a crashed worker's expires
+INBOX_RETRY_DELAYS = (5, 30, 120, 600)  # seconds after attempt 1, 2, 3, 4
+INBOX_MAX_ATTEMPTS = 5  # then failed (kept for inspection, audited)
+
+
+def inbox_retry_delay(attempts: int) -> timedelta:
+    """Wait before processing an inbox message again, after `attempts` failed attempts."""
+    delays = INBOX_RETRY_DELAYS
+    return timedelta(seconds=delays[min(max(attempts, 1), len(delays)) - 1])
+
+
+def scrub_error(error: str) -> str:
+    """An error kept in the inbox / audit log: no phone numbers or long digit runs."""
+    return re.sub(r"\+?\d{7,}", "[number]", error)[:300]
 
 
 def retry_delay(attempts: int) -> timedelta:
@@ -121,27 +143,116 @@ class KhayalService:
         member = self.store.find_member_by_channel(channel, ref) if ref else None
         return self.turns.reserve(member.id if member else f"{channel}:{ref or '?'}")
 
-    def accept(self, channel: str, event, external_id: str | None) -> Ticket | None:
-        """Webhook / poller: record the channel's message id and take a place in line.
-        None means this id was seen before (a retry): do not process it again."""
+    def accept(self, channel: str, event, external_id: str | None) -> InboxMessage | None:
+        """Webhook / poller: write the message to the inbox before the channel gets its
+        answer. The insert is the duplicate check: None means this id was seen before (a
+        retry) and nothing new will be processed. A message without an id is stored too."""
         if external_id is None:
-            log.warning("%s message without an id: processed without duplicate check", channel)
-        elif not self.store.mark_inbound_seen(channel, external_id):
+            log.warning("%s message without an id: stored; a resend would not be recognised",
+                        channel)  # fmt: skip
+        row = InboxMessage(
+            channel=channel,
+            external_id=external_id,
+            payload={"event": event, "at": utcnow().isoformat()},  # app clock, for the engine
+            received_at=clock.real_now(),
+        )
+        stored = self.store.add_inbox(row)
+        if stored is None:
             log.info("duplicate %s message %s ignored", channel, external_id)
-            return None
-        return self.reserve(channel, event)
+        return stored
 
-    def process(self, channel: str, event, ticket: Ticket) -> None:
-        """Background processing of an accepted message; errors are logged, not raised."""
+    def claim_inbox(self, limit: int = 20) -> list[tuple[InboxMessage, Ticket]]:
+        """Claim due inbox messages (oldest first) and take each sender's place in line in
+        that order, so one parent's messages are handled in arrival order."""
+        claimed = []
+        for row in self.store.claim_inbox(clock.real_now(), INBOX_LEASE, limit):
+            if not row.payload or "event" not in row.payload:
+                self._inbox_failed(row, "no payload to process", final=True)
+                continue
+            try:
+                ticket = self.reserve(row.channel, row.payload["event"])
+            except Exception as exc:  # a malformed event: retried, then failed
+                self._inbox_failed(row, f"{type(exc).__name__}: {exc}")
+                continue
+            claimed.append((row, ticket))
+        return claimed
+
+    def process(self, row: InboxMessage, ticket: Ticket) -> bool:
+        """One processing attempt of a claimed inbox message (in the sender's turn). True
+        when done; on an error it is retried later or, after 5 attempts, failed."""
+        assert row.payload is not None
+        replay = Replay(row.id, row.snapshot, partial(self.store.save_inbox_snapshot, row.id))
         try:
-            self.handle(channel, event, ticket)
-        except ChannelError as exc:
-            log.warning("%s inbound failed: %s", channel, exc)
-        except Exception:
-            log.exception("%s inbound failed", channel)
+            at = datetime.fromisoformat(row.payload["at"])
+            self.handle(row.channel, row.payload["event"], ticket, replay=replay, at=at)
+        except Exception as exc:
+            if not isinstance(exc, ChannelError):
+                log.exception("inbound %s (%s) failed", row.id, row.channel)
+            self._inbox_failed(row, f"{type(exc).__name__}: {exc}")
+            return False
+        try:
+            self.store.finish_inbox(row.id, clock.real_now())
+        except Exception:  # its lease runs out and it is replayed safely
+            log.exception("inbound %s processed but not marked done", row.id)
+            return False
+        return True
 
-    def handle(self, channel: str, event, ticket: Ticket | None = None) -> list[Outgoing]:
-        """An inbound event from a channel: reply to the sender, notify the family."""
+    def run_inbox(self) -> int:
+        """Process every due inbox message now, one at a time in this thread (the Telegram
+        poller's `poll_once`, tests, scripts). Returns how many were attempted."""
+        count = 0
+        while batch := self.claim_inbox():
+            for row, ticket in batch:
+                self.process(row, ticket)
+                count += 1
+        return count
+
+    def _inbox_failed(self, row: InboxMessage, error: str, *, final: bool = False) -> None:
+        at = clock.real_now()
+        error = scrub_error(error)
+        final = final or row.attempts >= INBOX_MAX_ATTEMPTS
+        retry_at = None if final else at + inbox_retry_delay(row.attempts)
+        self.store.fail_inbox(row.id, error, retry_at, at)
+        if retry_at is not None:
+            log.warning("inbound %s (%s) failed (attempt %d), retry at %s: %s",
+                        row.id, row.channel, row.attempts, retry_at.isoformat(), error)  # fmt: skip
+            return
+        log.error("inbound %s (%s) failed for good after %d attempts: %s",
+                  row.id, row.channel, row.attempts, error)  # fmt: skip
+        event = (row.payload or {}).get("event")
+        member = self._sender(row.channel, event) if event is not None else None
+        self.store.add_audit(
+            AuditEntry(
+                actor="system",
+                tool="inbound_failed",
+                args_json=json.dumps(
+                    {"inbox_id": row.id, "channel": row.channel, "external_id": row.external_id}
+                ),
+                result_json=json.dumps({"error": error, "attempts": row.attempts}),
+                parent_id=member.id if member and member.role == "parent" else None,
+                created_at=utcnow(),
+            )
+        )
+
+    def _sender(self, channel: str, event):
+        adapter = self.channels.get(channel)
+        try:
+            ref = adapter.sender_of(event) if adapter else None
+        except Exception:
+            return None
+        return self.store.find_member_by_channel(channel, ref) if ref else None
+
+    def handle(
+        self,
+        channel: str,
+        event,
+        ticket: Ticket | None = None,
+        *,
+        replay: Replay | None = None,
+        at: datetime | None = None,
+    ) -> list[Outgoing]:
+        """An inbound event from a channel: reply to the sender, notify the family.
+        `replay`/`at`: an inbox message (may be handled again) and when it arrived."""
         ticket = ticket or self.reserve(channel, event)
         with self.turns.turn(ticket):  # this sender only; other parents run in parallel
             adapter = self.channels[channel]
@@ -156,7 +267,9 @@ class KhayalService:
                 annotate = getattr(adapter, "set_transcript", None)
                 if annotate:
                     annotate(incoming.sender_ref, text)
-            out = self.engine.handle_message(incoming)
+            if at is not None:
+                incoming = incoming.model_copy(update={"received_at": at})
+            out = self.engine.handle_message(incoming, replay=replay)
             self.deliver(out)  # replies, before this parent's next message is handled
         return out + self.flush_outbox()
 

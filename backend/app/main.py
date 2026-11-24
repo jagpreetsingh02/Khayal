@@ -8,6 +8,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -24,6 +25,7 @@ from app.demo import ensure_demo_family
 
 log = logging.getLogger(__name__)
 TICK_SECONDS = 30  # read-back expiry, the 15-minute no-repeat amber, and the scheduler
+INBOX_STALE_SECONDS = 300  # /health is degraded when a message waits longer than this
 DASHBOARD_DIST = Path(__file__).resolve().parents[2] / "dashboard" / "dist"
 NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Khayal dashboard</title>
 <body style="font-family:system-ui;max-width:40rem;margin:3rem auto;padding:0 1rem">
@@ -101,6 +103,15 @@ def _mcp_status(svc: KhayalService) -> str:
     return "reachable"
 
 
+def _inbox_stats(svc: KhayalService) -> dict[str, Any] | None:
+    """Inbox counts per status and the age of the oldest pending message (seconds)."""
+    try:
+        return svc.store.inbox_stats(clock.real_now())
+    except Exception:
+        log.exception("health: inbox stats failed")
+        return None
+
+
 def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_SECONDS):
     settings = get_settings()
     if service is None:  # the real app (tests pass their own service)
@@ -114,6 +125,7 @@ def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_
         inbound = app.state.inbound = Inbound(svc)
         clock.sync_from(svc.store)  # keep the demo clock across restarts
         ensure_demo_family(svc.store)
+        await inbound.start()  # recovers what a previous run left in the inbox
         tasks = []
         if tick_seconds:
             tasks.append(asyncio.create_task(_ticker(svc, tick_seconds)))
@@ -125,7 +137,7 @@ def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
-        await inbound.drain()  # acknowledged messages still being processed
+        await inbound.drain()  # finish acknowledged messages; the rest stay in the inbox
 
     # Mock mode only: API docs (/docs, /redoc, /openapi.json) and the web simulator, which
     # sends messages as any parent and resets / reseeds / moves the demo clock with no sign-in.
@@ -186,17 +198,21 @@ def create_app(service: KhayalService | None = None, tick_seconds: float = TICK_
             return HTMLResponse(NOT_BUILT, status_code=503)
 
     @app.get("/health")
-    def health(request: Request, response: Response) -> dict[str, str]:
+    def health(request: Request, response: Response) -> dict[str, Any]:
         """ok: database and MCP server answer. degraded: the MCP server is down (the app still
-        serves the dashboard; readings cannot be logged). error (503): no database."""
+        serves the dashboard; readings cannot be logged), or the oldest unprocessed inbound
+        message waited more than 5 minutes. error (503): no database."""
         svc: KhayalService | None = getattr(request.app.state, "service", None)
         database = "ok" if svc is not None and _database_ok(svc) else "error"
         mcp = _mcp_status(svc) if svc is not None else "unknown"
         status = "ok" if mcp in ("reachable", "in-process") else "degraded"
+        inbox = _inbox_stats(svc) if database == "ok" and svc is not None else None
+        if inbox and (inbox["oldest_pending_s"] or 0) > INBOX_STALE_SECONDS:
+            status = "degraded"
         if database != "ok":
             status, response.status_code = "error", 503
         return {"status": status, "mode": get_settings().app_mode, "database": database,
-                "mcp": mcp}  # fmt: skip
+                "mcp": mcp, "inbox": inbox}  # fmt: skip
 
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:

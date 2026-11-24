@@ -3,7 +3,9 @@ without touching the MCP tools, rules or API code."""
 
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
+from typing import Any
 
+from app.clock import real_now
 from app.storage.models import (
     Alert,
     AuditEntry,
@@ -12,6 +14,8 @@ from app.storage.models import (
     DoseEvent,
     DoseStatus,
     Family,
+    InboxMessage,
+    InboxStatus,
     LoginCode,
     Medicine,
     Member,
@@ -294,10 +298,63 @@ class Store(ABC):
     def use_login_code(self, code_id: str, at: datetime) -> bool:
         """Mark the code used; True only for the first caller (single use)."""
 
-    # --- inbound dedup (webhook retries, poller restarts) ---
+    # --- inbox: inbound messages, written before the channel gets its answer ---
     @abstractmethod
+    def add_inbox(self, message: InboxMessage) -> InboxMessage | None:
+        """Write a received message. The same insert is the duplicate check: None when this
+        (channel, external_id) is already in the inbox (a retry). No id: always stored."""
+
+    @abstractmethod
+    def claim_inbox(self, now: datetime, lease: timedelta, limit: int = 20) -> list[InboxMessage]:
+        """Atomically claim due pending messages (oldest first): status processing, lease
+        until now + lease, attempts + 1. Two claimers never get the same row."""
+
+    @abstractmethod
+    def renew_inbox_leases(self, ids: list[str], until: datetime) -> None:
+        """Extend the lease of messages this worker is still processing."""
+
+    @abstractmethod
+    def release_expired_inbox(self, now: datetime) -> int:
+        """Messages left processing with an expired lease (a crashed worker) go back to
+        pending. Returns how many."""
+
+    @abstractmethod
+    def save_inbox_snapshot(self, message_id: str, snapshot: dict) -> None: ...
+
+    @abstractmethod
+    def finish_inbox(self, message_id: str, at: datetime) -> None:
+        """Done: blank the payload and snapshot, keep the metadata."""
+
+    @abstractmethod
+    def fail_inbox(
+        self, message_id: str, error: str, next_attempt_at: datetime | None, at: datetime
+    ) -> None:
+        """Back to pending until `next_attempt_at`, or failed for good when it is None
+        (the row and its payload are kept for inspection until the retention purge)."""
+
+    @abstractmethod
+    def get_inbox(self, message_id: str) -> InboxMessage: ...
+
+    @abstractmethod
+    def list_inbox(self, *, status: InboxStatus | None = None) -> list[InboxMessage]:
+        """Oldest first."""
+
+    @abstractmethod
+    def inbox_stats(self, now: datetime) -> dict[str, Any]:
+        """Counts per status and `oldest_pending_s` (seconds; None when nothing is pending)."""
+
+    @abstractmethod
+    def purge_inbox(self, before: datetime) -> int:
+        """Delete done and failed messages received before `before` (retention). Pending
+        and processing messages are never purged."""
+
     def mark_inbound_seen(self, channel: str, external_id: str) -> bool:
-        """Record a channel's message id; True only the first time it is seen."""
+        """Record a channel's message id with no payload (kept for older callers; the inbox
+        is the duplicate check now). True only the first time it is seen."""
+        row = InboxMessage(
+            channel=channel, external_id=external_id, received_at=real_now(), status="done"
+        )
+        return self.add_inbox(row) is not None
 
     # --- audit ---
     @abstractmethod

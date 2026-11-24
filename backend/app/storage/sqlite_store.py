@@ -1,6 +1,7 @@
 """SQLite implementation of the Store interface (stdlib sqlite3, no ORM)."""
 
 import json
+import logging
 import sqlite3
 import threading
 from collections.abc import Sequence
@@ -19,6 +20,8 @@ from app.storage.models import (
     DoseEvent,
     DoseStatus,
     Family,
+    InboxMessage,
+    InboxStatus,
     LoginCode,
     Medicine,
     Member,
@@ -38,6 +41,7 @@ from app.storage.models import (
 from app.storage.safe_text import check_medicine_text, check_name, check_note
 
 M = TypeVar("M", bound=BaseModel)
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS families (id TEXT PRIMARY KEY, name TEXT NOT NULL);
@@ -95,6 +99,15 @@ CREATE TABLE IF NOT EXISTS inbound_seen (
   channel TEXT NOT NULL, external_id TEXT NOT NULL, received_at TEXT NOT NULL,
   PRIMARY KEY (channel, external_id)
 );
+CREATE TABLE IF NOT EXISTS inbox (
+  id TEXT PRIMARY KEY, channel TEXT NOT NULL, external_id TEXT, payload_json TEXT,
+  snapshot_json TEXT, received_at TEXT NOT NULL, status TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT, lease_until TEXT, last_error TEXT,
+  finished_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_inbox_channel_external
+  ON inbox(channel, external_id) WHERE external_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_inbox_status ON inbox(status, received_at);
 CREATE TABLE IF NOT EXISTS login_codes (
   id TEXT PRIMARY KEY, member_id TEXT NOT NULL REFERENCES members(id), code_hash TEXT NOT NULL,
   created_at TEXT NOT NULL, expires_at TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0,
@@ -132,6 +145,24 @@ MIGRATIONS = [
 
 # Columns stored as JSON text.
 JSON_COLUMNS = {"times", "notified_member_ids", "payload"}
+
+# inbound_seen (H1: message ids only) is folded into the inbox: on open, its rows move into
+# the inbox as finished rows without a payload (same transaction), so a channel retry of an
+# old id is still recognised. The empty table is kept for older code.
+MOVE_INBOUND_SEEN = """
+INSERT OR IGNORE INTO inbox (id, channel, external_id, received_at, status, finished_at)
+  SELECT 'inb_' || lower(hex(randomblob(6))), channel, external_id, received_at, 'done',
+         received_at
+  FROM inbound_seen;
+DELETE FROM inbound_seen;
+"""
+
+# One alert per (reading, rule), in the database as well as in alert_family: a replayed
+# message can never create a second alert for the same reading.
+ALERT_UNIQUE = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_alerts_reading_rule ON alerts(reading_id, rule) "
+    "WHERE reading_id IS NOT NULL AND rule IS NOT NULL"
+)
 
 
 def _ts(value: datetime) -> str:
@@ -185,13 +216,21 @@ class SQLiteStore(Store):
                 cols = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
                 if column not in cols:
                     self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+            for statement in MOVE_INBOUND_SEEN.split(";"):
+                if statement.strip():
+                    self._conn.execute(statement)
+            try:
+                self._conn.execute(ALERT_UNIQUE)
+            except sqlite3.IntegrityError:  # an old database already has a duplicate
+                log.warning("alerts has duplicate (reading, rule) rows; unique index not added")
 
     @classmethod
     def from_url(cls, database_url: str) -> "SQLiteStore":
         return cls(path_from_url(database_url))
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:  # never while another thread is inside a query
+            self._conn.close()
 
     def ping(self) -> None:
         with self._lock:
@@ -439,7 +478,14 @@ class SQLiteStore(Store):
 
     # --- alerts ---
     def add_alert(self, alert: Alert) -> Alert:
-        return self._insert("alerts", alert)
+        try:
+            return self._insert("alerts", alert)
+        except sqlite3.IntegrityError:
+            if alert.reading_id and alert.rule:
+                raise ConflictError(
+                    f"An alert for reading {alert.reading_id} and rule {alert.rule} exists"
+                ) from None
+            raise
 
     def get_alert(self, alert_id: str) -> Alert:
         return self._one(Alert, "alerts", "id", alert_id)
@@ -651,15 +697,136 @@ class SQLiteStore(Store):
             )
         return cur.rowcount == 1
 
-    # --- inbound dedup ---
-    def mark_inbound_seen(self, channel: str, external_id: str) -> bool:
+    # --- inbox ---
+    @staticmethod
+    def _inbox(row: sqlite3.Row) -> InboxMessage:
+        data = {k: row[k] for k in row.keys() if k != "seq"}  # noqa: SIM118
+        for col in ("payload", "snapshot"):
+            raw = data.pop(f"{col}_json", None)
+            data[col] = json.loads(raw) if raw else None
+        return InboxMessage.model_validate(data)
+
+    def add_inbox(self, message: InboxMessage) -> InboxMessage | None:
+        row = _to_row(message.model_copy(update={"payload": None, "snapshot": None}))
+        del row["payload"], row["snapshot"]
+        for col in ("payload", "snapshot"):
+            value = getattr(message, col)
+            row[f"{col}_json"] = None if value is None else json.dumps(value)
+        cols, marks = ", ".join(row), ", ".join(f":{c}" for c in row)
+        with self._lock, self._conn:
+            cur = self._conn.execute(f"INSERT OR IGNORE INTO inbox ({cols}) VALUES ({marks})", row)
+        return message if cur.rowcount == 1 else None
+
+    def claim_inbox(self, now: datetime, lease: timedelta, limit: int = 20) -> list[InboxMessage]:
+        # Same pattern as claim_outbox: one UPDATE ... RETURNING runs alone, so two claimers
+        # never get the same row.
+        with self._lock, self._conn:
+            rows = self._conn.execute(
+                "UPDATE inbox SET status = 'processing', lease_until = :until, "
+                "  attempts = attempts + 1 "
+                "WHERE id IN (SELECT id FROM inbox WHERE status = 'pending' "
+                "  AND (next_attempt_at IS NULL OR next_attempt_at <= :now) "
+                "  ORDER BY received_at, rowid LIMIT :limit) "
+                "RETURNING rowid AS seq, *",
+                {"now": _ts(now), "until": _ts(now + lease), "limit": limit},
+            ).fetchall()
+        rows = sorted(rows, key=lambda r: (r["received_at"], r["seq"]))
+        return [self._inbox(r) for r in rows]
+
+    def renew_inbox_leases(self, ids: list[str], until: datetime) -> None:
+        if not ids:
+            return
+        marks = ", ".join("?" for _ in ids)
+        with self._lock, self._conn:
+            self._conn.execute(
+                f"UPDATE inbox SET lease_until = ? WHERE status = 'processing' AND id IN ({marks})",
+                (_ts(until), *ids),
+            )
+
+    def release_expired_inbox(self, now: datetime) -> int:
         with self._lock, self._conn:
             cur = self._conn.execute(
-                "INSERT OR IGNORE INTO inbound_seen (channel, external_id, received_at) "
-                "VALUES (?, ?, ?)",
-                (channel, external_id, _ts(utcnow())),
+                "UPDATE inbox SET status = 'pending', lease_until = NULL "
+                "WHERE status = 'processing' AND (lease_until IS NULL OR lease_until <= ?)",
+                (_ts(now),),
             )
-        return cur.rowcount == 1
+        return cur.rowcount
+
+    def save_inbox_snapshot(self, message_id: str, snapshot: dict) -> None:
+        self._update("inbox", "id", message_id, {"snapshot_json": json.dumps(snapshot)})
+
+    def finish_inbox(self, message_id: str, at: datetime) -> None:
+        self._update(
+            "inbox",
+            "id",
+            message_id,
+            {
+                "status": "done",
+                "finished_at": at,
+                "lease_until": None,
+                "next_attempt_at": None,
+                "last_error": None,
+                "payload_json": None,  # phone numbers and message text: not kept
+                "snapshot_json": None,
+            },
+        )
+
+    def fail_inbox(
+        self, message_id: str, error: str, next_attempt_at: datetime | None, at: datetime
+    ) -> None:
+        final = next_attempt_at is None
+        self._update(
+            "inbox",
+            "id",
+            message_id,
+            {
+                "status": "failed" if final else "pending",
+                "last_error": error[:500],
+                "lease_until": None,
+                "next_attempt_at": next_attempt_at,
+                "finished_at": at if final else None,
+            },
+        )
+
+    def get_inbox(self, message_id: str) -> InboxMessage:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM inbox WHERE id = ?", (message_id,)).fetchone()
+        if row is None:
+            raise NotFoundError(f"inbox: no row with id={message_id!r}")
+        return self._inbox(row)
+
+    def list_inbox(self, *, status: InboxStatus | None = None) -> list[InboxMessage]:
+        sql, params = "SELECT * FROM inbox", tuple[str, ...]()
+        if status is not None:
+            sql, params = sql + " WHERE status = ?", (status,)
+        with self._lock:
+            rows = self._conn.execute(sql + " ORDER BY received_at, rowid", params).fetchall()
+        return [self._inbox(r) for r in rows]
+
+    def inbox_stats(self, now: datetime) -> dict[str, Any]:
+        with self._lock:
+            counts = dict(
+                self._conn.execute("SELECT status, COUNT(*) FROM inbox GROUP BY status").fetchall()
+            )
+            oldest = self._conn.execute(
+                "SELECT MIN(received_at) FROM inbox WHERE status = 'pending'"
+            ).fetchone()[0]
+        stats: dict[str, Any] = {s: counts.get(s, 0) for s in ("pending", "processing", "done",
+                                                               "failed")}  # fmt: skip
+        age = None
+        if oldest:
+            received = datetime.strptime(oldest, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
+            age = max(0.0, round((now - received).total_seconds(), 1))
+        stats["oldest_pending_s"] = age
+        return stats
+
+    def purge_inbox(self, before: datetime) -> int:
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "DELETE FROM inbox WHERE status IN ('done', 'failed') AND received_at < ?",
+                (_ts(before),),
+            )
+        return cur.rowcount
 
     # --- audit ---
     def add_audit(self, entry: AuditEntry) -> AuditEntry:
@@ -700,6 +867,7 @@ class SQLiteStore(Store):
         tables = [
             "kv",
             "inbound_seen",
+            "inbox",
             "outbox",
             "login_codes",
             "audit_log",

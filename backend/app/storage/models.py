@@ -222,6 +222,33 @@ class OutboxMessage(BaseModel):
         return self.level == "red" and self.kind == "message"
 
 
+InboxStatus = Literal["pending", "processing", "done", "failed"]
+
+
+class InboxMessage(BaseModel):
+    """A message from a channel (Twilio webhook, Telegram webhook or poller), written before
+    the channel gets its answer and processed from here (app/channels/inbound.py).
+
+    `payload` is the raw channel event plus the time it arrived on the app clock; it holds
+    phone numbers and message text, so it is blanked once the message is done and the row
+    keeps only metadata. `snapshot` is the parent's conversation state before the first
+    attempt (see ConversationEngine.handle_message), blanked with the payload. Times are on
+    the real clock (not the demo clock): leases, retries and retention are infrastructure."""
+
+    id: str = Field(default_factory=lambda: new_id("inb"))
+    channel: str
+    external_id: str | None = None  # MessageSid / update_id; unique per channel when set
+    payload: dict[str, Any] | None = None
+    snapshot: dict[str, Any] | None = None
+    received_at: datetime
+    status: InboxStatus = "pending"
+    attempts: int = 0  # processing attempts started (counted when claimed)
+    next_attempt_at: datetime | None = None  # None: due now
+    lease_until: datetime | None = None  # while processing: the worker's claim
+    last_error: str | None = None
+    finished_at: datetime | None = None  # done or failed
+
+
 class LoginCode(BaseModel):
     """A one-time dashboard sign-in code. Only an HMAC of the code is stored (see
     app/api/login_codes.py); a new code for the member revokes the older ones."""
