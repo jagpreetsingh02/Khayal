@@ -2,12 +2,14 @@
 
     cd backend
     uv run python ../scripts/seed_demo.py           # once: demo family
-    export MCP_SHARED_SECRET=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+    export MCP_TOKEN_SECRET=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
     uv run python -m mcp_server.server &            # MCP server on :8001 (needs the secret)
     uv run python ../scripts/mcp_client_demo.py     # list tools + call log_reading
 
-The sender (the parent's channel + number) travels in the request `_meta`, exactly as the
-backend will send it. The tool arguments contain no parent id.
+Exactly as the backend does it: a fresh 60-second parent token (sub = the parent's member id,
+looked up here from the sender) on the HTTP request, and the sender (the parent's channel +
+number) in `_meta`, which the server only cross-checks. The tool arguments contain no parent
+id. With MCP_AUTH_MODE=secret (mock only) the shared secret is sent instead.
 """
 
 import argparse
@@ -27,8 +29,8 @@ DEFAULT_SENDER = ("simulator", "+919800000001")  # seeded parent
 
 
 async def demo(target: Any, channel: str, ref: str, out=print, secret: str = "") -> dict[str, Any]:
-    """`target` is a URL (real HTTP, needs the server's MCP_SHARED_SECRET) or a FastMCP
-    server object (in-process)."""
+    """`target` is a URL (real HTTP) or a FastMCP server object (in-process). `secret`: the
+    bearer for HTTP, a minted token (token mode) or the shared secret (secret mode)."""
     auth = secret if isinstance(target, str) and secret else None
     async with Client(target, auth=auth) as client:
         tools = await client.list_tools()
@@ -54,21 +56,32 @@ def main() -> None:
     settings = get_settings()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--url", default=settings.mcp_server_url)
+    token_mode = settings.mcp_auth_mode == "token"
+    name = "MCP_TOKEN_SECRET" if token_mode else "MCP_SHARED_SECRET"
     parser.add_argument(
         "--secret",
-        default=settings.mcp_shared_secret,
-        help="the server's MCP_SHARED_SECRET (default: from .env)",
+        default=settings.mcp_token_secret if token_mode else settings.mcp_shared_secret,
+        help=f"the server's {name} (MCP_AUTH_MODE={settings.mcp_auth_mode}; default: from .env)",
     )
     parser.add_argument("--channel", default=DEFAULT_SENDER[0])
     parser.add_argument("--sender", default=DEFAULT_SENDER[1])
     a = parser.parse_args()
+    bearer = a.secret
+    if token_mode and a.secret:
+        from app.storage import get_store
+        from mcp_server.tokens import mint_token
+
+        parent = get_store().find_member_by_channel(a.channel, a.sender)
+        if parent is None:
+            sys.exit(f"No member {a.channel}:{a.sender}; seed it: ../scripts/seed_demo.py")
+        bearer = mint_token(a.secret, parent.id, "parent")
     print(f"Connecting to {a.url} as {a.channel}:{a.sender}")
     try:
-        asyncio.run(demo(a.url, a.channel, a.sender, secret=a.secret))
+        asyncio.run(demo(a.url, a.channel, a.sender, secret=bearer))
     except Exception as exc:  # connection refused, unknown sender, ...
         sys.exit(
             f"Failed: {exc}\nIs the server running (uv run python -m mcp_server.server) with "
-            "the same MCP_SHARED_SECRET (.env or --secret), and the demo data seeded "
+            f"the same {name} (.env or --secret), and the demo data seeded "
             "(uv run python ../scripts/seed_demo.py)?"
         )
 

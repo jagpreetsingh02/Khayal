@@ -6,7 +6,8 @@
 # Settings come from .env if it exists (optional; KHAYAL_ENV_FILE picks another file).
 # APP_MODE=mock needs no keys: the init step makes random secrets on first start.
 # APP_MODE=dev/aws: init refuses to start anything without SESSION_SECRET and
-# MCP_SHARED_SECRET of 32+ characters (and the rest of the startup check).
+# MCP_TOKEN_SECRET of 32+ characters, or with MCP_AUTH_MODE=secret (and the rest of the
+# startup check).
 # SQLite on a shared volume is for a demo on one host, not for several hosts.
 
 name: khayal
