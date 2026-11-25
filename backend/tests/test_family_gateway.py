@@ -100,3 +100,16 @@ def test_who_lists_the_family_member_ids():
     assert any(world.a["child"].id in line and "use this id" in line for line in lines)
     assert not any("Iyer" in line for line in lines)
     assert family_gateway.who("simulator", "+910000000000", lines.append) == 1
+
+
+def test_member_can_be_given_as_channel_and_number_and_survives_reseeding():
+    from app.storage import set_store
+
+    world = TwoFamilies(token_secret=TOKEN_SECRET)
+    set_store(world.store)
+    assert family_gateway.member_id_of("simulator:+919800000002") == world.a["child"].id
+    assert family_gateway.member_id_of("mem_abc") == "mem_abc"
+    _, [meds] = through_gateway(world, "simulator:+919800000002", [("get_meds", {})])
+    assert [m["id"] for m in meds.structured_content["medicines"]] == [world.a_med.id]
+    _, [nobody] = through_gateway(world, "simulator:+910000000000", [("get_meds", {})])
+    assert nobody.is_error and "No member simulator:+910000000000" in nobody.content[0].text
