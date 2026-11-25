@@ -11,8 +11,12 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   tokens** done and merged (tags `hardening-h1-done` … `hardening-h5-done`, `feature-s1-done`,
   `feature-s2-done`).
 - Current branch: `main`
-- **Next step: ask the user.** Candidates: Postgres/DynamoDB adapter (the inbox needs one
-  too), schema versioning, structured logging, DPDP export/delete.
+- **Feature freeze until the pitch** (user, 25 Nov). `pitch-readiness` done (tag `pitch-ready`):
+  fresh clone + Docker checked from the README, demo script walked end to end, reset command,
+  consistency sweep, `docs/PITCH_FACTS.md`. **Next step: ask the user** (only fixes to docs and
+  scripts before the pitch).
+- **Reset between rehearsals:** Ctrl+C, then `cd backend && uv run python ../scripts/start.py
+  --seed` (refuses while ports 8000/8001 are busy). Docker: `docker compose down -v && up -d`.
 - **Pitch demo path changed (H4):** severe BP now asks the warning-signs question first:
   bp high → 1 → **2** → Skip 5 min → bp high → 1 → **2** → RED. (Answer 1 = RED at once.)
 
@@ -64,7 +68,7 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
 
 ## How to run (current)
 - Once: `cd dashboard && npm ci && npm run build` (Node 20.19+/22.12+). Backend: `cd backend && uv sync && uv run
-  python -m pytest` (669 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
+  python -m pytest` (671 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
   Local venv was moved from ~/Downloads/care-circle, so `.venv/bin/pytest` has a stale shebang:
   use `python -m pytest` (or `uv sync --reinstall` to fix the scripts).
 - **Demo: `uv run python ../scripts/start.py --seed`** -> http://localhost:8000/simulator and
@@ -118,6 +122,11 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   started directly, `CHANNEL=twilio` with a dummy token, `HTTPS_PROXY` to a closed port.
 
 ## Decisions log
+- 2026-11-25 (pitch): paused consent keeps the dashboard rule (user confirmed). No behaviour
+  changes before the pitch. Gateway accepts `FAMILY_GATEWAY_MEMBER_ID=simulator:+919800000002`
+  (resolved per call) because seeded ids change on every reseed. Known demo quirk kept:
+  "Skip 5 minutes" backdates the parent's data, so later alerts show the earlier time;
+  dashboard audit shows the parent's symptom answer as "Family · symptom check" (cosmetic).
 - 2026-11-25 (S2): per-call token (not per session); in-process calls and secret mode keep
   `_meta` identity (no HTTP = same process). Scopes enforced in our own middleware (works on
   every transport); weekly_summary accepts readings:read or summary:read. Paused consent:
@@ -153,6 +162,8 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   `init` writes mock secrets once; dev/aws startup check exits 1 on unsafe config.
 
 ## Session log (newest first, one line each)
+- 2026-11-25: pitch readiness — 669 -> 671 tests; fixed screenshots.py login, start.py busy-port
+  guard, conftest blanks MCP_TOKEN_SECRET (a set one made a test start a real server and hang).
 - 2026-11-25: S2 per-call tokens + family view — 638 -> 669 tests; live: start.py, gateway over
   stdio, Docker keyless (init made MCP_TOKEN_SECRET, red alert path), no token in logs.
 - 2026-11-22..25: Phases 0-6 (393) · H1 409 · H2 439 · H3 449 · H4 607 · H5 614 · S1 638.

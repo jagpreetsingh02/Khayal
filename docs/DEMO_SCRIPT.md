@@ -1,13 +1,30 @@
 # Demo script (4 minutes, mock mode)
 
 Click-by-click script for the demo video. Everything runs locally with **no API keys**. The
-messages quoted below are what the app actually sends (checked on a fresh clone, 23 Nov 2026).
+messages quoted below are what the app actually sends (walked end to end on a fresh clone,
+25 Nov 2026; "…" marks a part of a message left out here).
+
+## Reset to the clean demo (one command)
+
+Between rehearsals and right before the pitch: stop Khayal with **Ctrl+C** in its terminal, then
+
+```bash
+cd backend && uv run python ../scripts/start.py --seed
+```
+
+This deletes the database (and its WAL files) and seeds the Gowda family again: Lakshmi (parent,
+consent granted), Ravi and Priya (children), 14 days of history, demo clock back to now, empty
+chats. If Khayal is still running (port 8000 or 8001 in use), it refuses and changes nothing.
+With Docker instead: `docker compose down -v && docker compose up -d`.
+
+(The simulator's **Reset demo** button is different: it starts an *empty* family with consent
+*pending*, for showing onboarding. It does not bring back the 14 days of history.)
 
 ## Before you record (2 minutes, off camera)
 
 1. Use mock mode so every take is identical: in `.env` set `LLM_PROVIDER=mock`, `VOICE=mock`,
    `CALL_PROVIDER=mock` (or just `cp .env.example .env`).
-2. Start fresh demo data:
+2. Start fresh demo data (the reset command above):
    ```bash
    cd backend
    uv run python ../scripts/start.py --seed
@@ -22,6 +39,12 @@ messages quoted below are what the app actually sends (checked on a fresh clone,
 
 A reminder may already be in Lakshmi's chat when you open the simulator (the scheduler sends it if a
 medicine time has just passed). That is fine; leave it unanswered.
+
+**About ⏩ Skip 5 minutes:** it does not move the clock. It moves *this parent's* recent
+readings and questions 5 minutes into the past, as if the time had passed. So an alert sent
+after a skip shows the reading's time moved back (e.g. a low sugar read at 1:23 AM appears as
+"at 1:08 AM" in the no-recheck alert after three skips). ⏰ / ⏩ 30 min / ⏩ 1 day move the real
+demo clock.
 
 ### Seed data (`scripts/seed_demo.py`)
 
@@ -60,7 +83,8 @@ Show the simulator.
 
 ### 0:45 High BP → warning-signs check → repeat → RED → family alert + call (55 s)
 
-1. Click **🖼️** → **bp high** → *"…I read 186/122, pulse 92 — correct?"* → click **1**.
+1. Click **🖼️** → **bp high** → *"This is very different from your usual readings, please
+   check. I read 186/122, pulse 92 — correct? Reply 1 yes / 2 no"* → click **1**.
    Chat: *"Saved: 186/122, pulse 92. This is at or above the limit your doctor set. Do you have
    any of these right now: chest pain, breathlessness, weakness or numbness on one side or
    slurred speech, severe headache, confusion, or sudden vision problems? Reply 1 yes / 2 no"*.
@@ -82,9 +106,15 @@ Show the simulator.
    - (Shorter variant: answer **1** at the first question: RED at once, *"Please call 108 or 112
      now…"*.)
    - (Silent-parent variant: after the first **1**, answer nothing and click **⏩ Skip 5
-     minutes** three times. No answer and no repeat within 15 minutes is **RED**: *"…She did not
-     answer the warning-signs question and no repeat reading was taken within 15 minutes.
-     Please call her now."* If she had answered **2**, a missing repeat would stay AMBER.)
+     minutes** three times. After the first skip Lakshmi gets *"I did not get an answer. Please
+     sit and rest for 5 minutes, then measure again…"*; after the third, *"No repeat reading
+     came after 186/122, pulse 92, so I let your family know…"* and the children get **RED**:
+     *"RED alert for Lakshmi Gowda: BP 186/122 at … was at or above the limit her doctor set
+     (180/120). She did not answer the warning-signs question and no repeat reading was taken
+     within 15 minutes. Please call her now."* plus a call card. If she had answered **2**, a
+     missing repeat would stay AMBER.)
+   - The variants need a fresh start (the reset command) or at least **⏩ 30 min** first, so the
+     new reading is not taken as the repeat of the previous one.
 4. Dashboard (right): the red alert appears on **Overview** within a few seconds. Click
    **Trends** to show the spike above the doctor's band. Click **Alerts** → **I've seen this**.
 
@@ -109,7 +139,8 @@ Show the simulator.
    taken it."*
 4. Repeat **⏰ Next reminder** → **⏩ 30 min** until two reminders on the same day are unanswered.
    Ravi and Priya get *"AMBER alert for Lakshmi Gowda: 2 medicine reminders were marked missed on
-   <date>."* (Usually one or two rounds. Amber never rings the phone.)
+   <date>, at or above the limit her doctor set (2 a day)."* (Usually two rounds. Amber never
+   rings the phone.)
 
 > **Say:** "Reminders come as voice notes in Indian English. If she misses two in a day, the family gets an
 > amber alert, not an alarm."
@@ -161,6 +192,38 @@ Dashboard (as Ravi): **What the AI did**.
 **End at 4:00.**
 
 ## Optional extras (if you have time)
+
+### Low sugar (typed, no photo needed)
+
+- Type `sugar 62` → *"I read sugar 62 mg/dL — correct? Reply 1 yes / 2 no"* → **1**. Lakshmi:
+  *"Saved: sugar 62 mg/dL. It is outside the limit your doctor set, so I let your family know.
+  Please follow your doctor's plan for low sugar. Please check your sugar again in 15 minutes
+  and send the reading."* and *"Did you faint, feel confused, or did someone have to help you?
+  Reply 1 yes / 2 no"*. Ravi and Priya: *"AMBER alert for Lakshmi Gowda: Glucose 62 mg/dL at …
+  is below the limit her doctor set (70). A recheck in 15 minutes was requested."* Three
+  **⏩ Skip 5 minutes** with no recheck: a second AMBER, *"…No recheck came within 15 minutes."*
+- Type `sugar 45` → **1**: the children get **RED** *"Glucose 45 mg/dL at … is below the limit
+  her doctor set (54). Please call now."* plus a call card; Lakshmi is told she has been
+  reported, to follow her doctor's plan, to recheck in 15 minutes and to call 108/112 if unwell.
+
+### Family MCP view (Ravi reads from his own MCP client)
+
+Set up once (details in [FAMILY_MCP.md](FAMILY_MCP.md)): in `.env` fill in
+`MCP_TOKEN_SECRET=` (any 32+ characters, e.g. from
+`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`) and set
+`FAMILY_GATEWAY_MEMBER_ID=simulator:+919800000002` (Ravi; still right after a reseed), then
+restart with the reset command. In a second terminal:
+
+```bash
+npx @modelcontextprotocol/inspector uv --directory "$PWD/backend" run python ../scripts/family_gateway.py
+```
+
+(run from the repo root). In the Inspector: **Connect** → **List Tools** shows only
+`get_history`, `get_meds`, `weekly_summary`. Call `get_history` (range `7d`): *"Confirmed
+readings, 7d: … BP (latest …, avg …); … glucose (latest …, avg …)."* (A check without the
+browser UI: add `--cli` after `inspector` and `--method tools/list` at the end.) Dashboard as **Lakshmi** →
+**What the AI did**: *"Viewed by Ravi Gowda: the readings, through the family MCP connection
+(read-only)."*
 
 - Type `what's the weather?` in Lakshmi's chat: *"I can only help with readings and medicines."*
 - **🗣️** → *“I took my medicine”* after a reminder: marked as taken, answered with a voice note.
