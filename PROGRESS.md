@@ -7,8 +7,9 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
 ## Current status
 - Submission (Phase 1 of judging) is in: tag **`submission-phase1`** = the exact submitted
   commit. Repo may change until **26 Nov 2026**; `main` must stay demo-ready for the pitch.
-- Current work stream: **Hardening** (below). H1-H5 and **S1 durable inbox** done and merged
-  (tags `hardening-h1-done` … `hardening-h5-done`, `feature-s1-done`). CI green on `main`.
+- Current work stream: **Hardening** (below). H1-H5, **S1 durable inbox** and **S2 per-call
+  tokens** done and merged (tags `hardening-h1-done` … `hardening-h5-done`, `feature-s1-done`,
+  `feature-s2-done`).
 - Current branch: `main`
 - **Next step: ask the user.** Candidates: Postgres/DynamoDB adapter (the inbox needs one
   too), schema versioning, structured logging, DPDP export/delete.
@@ -16,27 +17,23 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   bp high → 1 → **2** → Skip 5 min → bp high → 1 → **2** → RED. (Answer 1 = RED at once.)
 
 ## Hardening (production) — one branch per phase, merged with --no-ff, tagged when done
-- [x] **H1-H3** (tags `hardening-h1/h2/h3-done`): outbox leases + retries (red text forever),
-  inbound dedup, per-member FIFO; signed sessions, codes, rate limits, MCP bearer, startup check,
-  CSP; simulator mock-only, mypy 0, CI (3.11+3.13, dashboard, audit), Docker + Compose,
-  `/health`. Details: README "Security", "Reliability", "Production readiness".
-- [x] **S1 durable inbox** (`feature-s1-durable-inbox`, tag `feature-s1-done`): webhooks and
-  poller write `inbox` (insert = dedup) before the ack; worker `app/channels/inbound.py`
-  (claim + 60 s lease renewed, retries 5 s/30 s/2 m/10 m, 5th = `failed` + audit
-  `inbound_failed`, recovery of expired leases, drain); payload blanked when done, purge after
-  `INBOX_RETENTION_DAYS`. `inbound_seen` moved into `inbox` on open. Replay safety:
-  `engine.Replay` + `_msg` mark + snapshot; reading id = hash(inbox id); unique
-  `alerts(reading_id, rule)`. Details: README "Reliability". Tests `test_inbox.py` (24).
-- [x] **H5 silent parent** (`hardening-h5-silence`, tag `hardening-h5-done`): severe BP with
-  no answer to the warning-signs question (`no_reply`) and no confirmed repeat in 15 min =
-  RED `bp_severe_no_reply` ("…did not answer… Please call her now"), normal red path; answered
-  "no" + no repeat stays amber. `scripts/chat_demo.py` now answers the question ("2").
-- [x] **H4 clinical + MCP** (`hardening-h4-mcp`, tag `hardening-h4-done`): AHA/ACC warning-signs
-  question at severe BP, ADA 2026 glucose floors 54/70, doctor's low-sugar plan, pronouns; MCP
-  titles/annotations/output schemas, `alert_family(level, reading_id)` only, write-time text
-  checks (`app/storage/safe_text.py`), Host/Origin guard, manifest pin (update:
-  `uv run python -m mcp_server.manifest --update`); red-team/clinical/metadata tests;
-  real-photo harness `accuracy_test.py --import/--real`. Details: README.
+- [x] **S2 tokens + family view** (`feature-s2-tokens`, tag `feature-s2-done`): API mints an
+  HS256 JWT per MCP call (`mcp_server/tokens.py`: iss khayal-api, aud khayal-mcp, sub member,
+  role, scope, exp 60 s, jti) with `MCP_TOKEN_SECRET`; server = FastMCP `JWTVerifier` subclass
+  (+ exp/iat/jti required, lifetime <=60, known role); caller from `sub`, `_meta` cross-check
+  (mismatch refused + audited `identity_mismatch`). Scopes per tool (`mcp_server/scopes.py`),
+  enforced + tools/list filtered in `AccessMiddleware`; manifest pinned per role (parent,
+  family). Family reads: get_history/get_meds/weekly_summary + optional `parent_name`
+  (registry match), dashboard rules moved to `app/sharing.py`; audit `family_mcp:<tool>` actor
+  member "Viewed by" (dashboard shows it). `MCP_AUTH_MODE=secret` mock only. Gateway
+  `scripts/family_gateway.py` + `docs/FAMILY_MCP.md`. Tests +31 (red-team, gateway, dashboard).
+- [x] **H1-H5, S1** (tags `hardening-h1..h5-done`, `feature-s1-done`): outbox leases/retries
+  (red text forever), dedup, per-member FIFO; signed sessions, codes, rate limits, startup
+  check, CSP, simulator mock-only, mypy, CI, Docker, `/health` (H1-H3); AHA/ACC warning-signs
+  question, ADA 54/70, annotations/output schemas, `safe_text`, Host/Origin guard, manifest pin
+  (`uv run python -m mcp_server.manifest --update`), red-team tests (H4); silent parent at
+  severe BP = RED `bp_severe_no_reply` (H5); durable inbox `app/channels/inbound.py` with
+  leases, retries, replay safety (S1, `test_inbox.py`). Details: README sections.
 
 ## Phase checklist
 - [x] Phase 0 — setup · [x] Phase 1 — MCP core + storage · [x] Phase 2 — reader + read-back
@@ -67,7 +64,7 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
 
 ## How to run (current)
 - Once: `cd dashboard && npm ci && npm run build` (Node 20.19+/22.12+). Backend: `cd backend && uv sync && uv run
-  python -m pytest` (614 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
+  python -m pytest` (669 tests, zero real API calls; `RUN_LIVE_TESTS=1` adds the 2 live ones).
   Local venv was moved from ~/Downloads/care-circle, so `.venv/bin/pytest` has a stale shebang:
   use `python -m pytest` (or `uv sync --reinstall` to fix the scripts).
 - **Demo: `uv run python ../scripts/start.py --seed`** -> http://localhost:8000/simulator and
@@ -86,6 +83,11 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
 - FastMCP 4 auth: subclass `fastmcp.server.auth.TokenVerifier` (`async verify_token` ->
   `AccessToken | None`), pass `FastMCP(auth=...)` -> 401 before tools; client `Client(url,
   auth="<token>")` sends Bearer (in-memory transport rejects `auth`). itsdangerous not installed.
+  `JWTVerifier(public_key=<secret>, algorithm="HS256", issuer, audience)` supports HMAC but
+  accepts tokens WITHOUT exp (we subclass). `get_access_token()` (fastmcp.server.dependencies)
+  -> `.claims/.scopes/.subject`; None in-process. Tool `auth=require_scopes()` is NOT used: on
+  the in-memory transport the token is None, so every tool would be hidden (only stdio skips
+  checks). FastMCP's logger has `propagate=False` (tests attach a handler). joserfc 1.8 signs.
 - FastMCP 4: `mcp.run(transport="http")`; tests via `fastmcp.Client(mcp)` + `asyncio.run`;
   `_meta` = `ctx.request_context.meta`; audit + clock sync in `Middleware.on_call_tool`.
 - Dashboard: Vite 8 (`base: '/dashboard/'`), React 19, TS 7, Recharts 3, oxlint (no refs/Date.now
@@ -116,21 +118,19 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   started directly, `CHANNEL=twilio` with a dummy token, `HTTPS_PROXY` to a closed port.
 
 ## Decisions log
-- 2026-11-24 (S1): inbox times use the **real** clock (leases/retention), the engine uses the
-  message's arrival time on the demo clock (stored in the payload). `inbound_seen` folded into
-  `inbox`. A retried (errored) message does **not** block the parent's newer messages (a
-  STOP or a warning-signs "1" must not wait ~13 min behind a failing download); the replay
-  snapshot is only restored if the `_msg` mark shows nothing ran since. Simulator stays
-  synchronous (no inbox). Delivery-failure logs use the member id, not the phone number.
-- 2026-11-24 (H4): asymptomatic severe repeat stays **red** (rings family) with "contact her
-  doctor today" wording; no-recheck after a low sugar is **amber** (respects sharing, cap).
-  One alert per (reading, rule) via `alerts.rule`; `alert_family` sends the most urgent unsent
-  candidate. Symptom answers stored on `readings.symptoms` by the engine only. Strip candidates
-  = parent's medicines + curated brand list (else a fresh family could never add one). Family
-  pronoun field (default they/their) rather than inferring from names. `safe_text` rejects
-  digits-7+, links, "@", markup, instruction words (system/ignore/send/approve/...).
+- 2026-11-25 (S2): per-call token (not per session); in-process calls and secret mode keep
+  `_meta` identity (no HTTP = same process). Scopes enforced in our own middleware (works on
+  every transport); weekly_summary accepts readings:read or summary:read. Paused consent:
+  family reads follow the dashboard rule (paused = what was shared stays visible), per "reuse
+  the dashboard's rules". Family audit stores no data (`{"viewed": true}`). `ping()` uses sub
+  `khayal-api:health` (lists parent tools; calls fail). Gateway refused in aws / non-local URL.
+- 2026-11-24 (S1/H4): inbox uses the real clock, engine the message's demo-clock time; an
+  errored message never blocks newer ones; replay snapshot restored only if nothing ran since.
+  Asymptomatic severe repeat = red; low-sugar no-recheck = amber; one alert per (reading,
+  rule); pronoun field (they/their default); `safe_text` rejects digits-7+, links, "@",
+  markup, instruction words.
 - 2026-11-22 (Ph 0-3): mock-first, SQLite now; Groq dev / Bedrock AWS; no AI attribution; no
-  `approve_refill` MCP tool; sender identity in MCP `_meta`, no parent_id args; `log_reading` stores
+  `approve_refill` MCP tool; identity server-side (S2: token `sub`), no parent_id args; `log_reading` stores
   unconfirmed, confirmation is the parent's reply; `alert_family` re-evaluates, no escalation,
   dedupe, amber cap 3/day; refill cap 30 days, Schedule X refused; consent enforced in every tool;
   API -> MCP over streamable HTTP, family messages via store outbox; SQLite WAL.
@@ -153,6 +153,6 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   `init` writes mock secrets once; dev/aws startup check exits 1 on unsafe config.
 
 ## Session log (newest first, one line each)
-- 2026-11-24/25: S1 durable inbox — 614 -> 638 tests (+2 live skipped); real-process kill test OK.
-- 2026-11-24: H1 (409) · H2 (439) · H3 (449) · H4 (607, demo walked over HTTP) · H5 (614).
-- 2026-11-22/23: Phases 0-6 + chores done (387 tests at phase 6, 393 after chores).
+- 2026-11-25: S2 per-call tokens + family view — 638 -> 669 tests; live: start.py, gateway over
+  stdio, Docker keyless (init made MCP_TOKEN_SECRET, red alert path), no token in logs.
+- 2026-11-22..25: Phases 0-6 (393) · H1 409 · H2 439 · H3 449 · H4 607 · H5 614 · S1 638.

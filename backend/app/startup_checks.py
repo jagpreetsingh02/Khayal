@@ -1,7 +1,8 @@
 """Refuse unsafe production config at startup (APP_MODE=dev or aws).
 
 Mock mode is the zero-key demo and is never blocked: an empty SESSION_SECRET gets a random
-one per start (app/api/auth.py) and scripts/start.py makes an MCP_SHARED_SECRET per run.
+one per start (app/api/auth.py) and scripts/start.py makes an MCP_TOKEN_SECRET (and, for
+MCP_AUTH_MODE=secret, an MCP_SHARED_SECRET) per run. dev/aws need MCP_AUTH_MODE=token.
 In dev/aws every problem is collected first, then the process stops with one message that
 lists them all, so a deploy is fixed in one pass instead of one error at a time.
 """
@@ -28,9 +29,14 @@ def config_problems(settings: Settings, component: str = "api") -> tuple[list[st
             )
         return errors, warnings
 
+    if settings.mcp_auth_mode != "token":
+        errors.append(
+            f"MCP_AUTH_MODE={settings.mcp_auth_mode} is allowed only in APP_MODE=mock (one shared "
+            "bearer lets its holder claim any sender). Use MCP_AUTH_MODE=token."
+        )
     for name, value in (
         ("SESSION_SECRET", settings.session_secret),
-        ("MCP_SHARED_SECRET", settings.mcp_shared_secret),
+        ("MCP_TOKEN_SECRET", settings.mcp_token_secret),
     ):
         if not value:
             errors.append(f"{name} is not set (python -c 'import secrets; "

@@ -44,6 +44,7 @@ from app.config import get_settings
 from app.conversation import templates as tpl
 from app.demo import PARENT_REF, ensure_demo_family
 from app.pharmacy import DEMO_LABEL, DemoPharmacy
+from app.sharing import alert_visible, can_see, consented
 from app.storage import ConflictError, NotFoundError, Store
 from app.storage.models import (
     SHARE_CATEGORIES,
@@ -63,6 +64,7 @@ from app.voice import phrases
 TZ = ZoneInfo("Asia/Kolkata")
 RANGE_DAYS = {"7d": 7, "14d": 14, "30d": 30, "90d": 90}
 APPROVED_STATES = ("approved", "sent_to_pharmacy", "fulfilled")
+FAMILY_MCP = "family_mcp:"  # audit tool prefix of a family member's read through MCP
 # Which sharing category an audit entry belongs to (children see details only if shared).
 TOOL_CATEGORY: dict[str, ShareCategory] = {
     "log_reading": "readings",
@@ -80,6 +82,10 @@ TOOL_CATEGORY: dict[str, ShareCategory] = {
     "dashboard:reject_refill": "medicines",
     "pharmacy:demo_order": "medicines",
     "demo:simulate_low_stock": "medicines",
+    # A family member read the parent's data through the read-only family MCP tools.
+    "family_mcp:get_history": "readings",
+    "family_mcp:weekly_summary": "readings",
+    "family_mcp:get_meds": "medicines",
 }
 
 public = APIRouter(prefix="/api", tags=["dashboard"])
@@ -128,24 +134,10 @@ def _parent(store: Store, me: Member, parent_id: str) -> Member:
     return parent
 
 
-def _consented(me: Member, parent: Member) -> bool:
-    """Nothing is shared before consent, or after it is withdrawn (the parent sees all)."""
-    return me.id == parent.id or parent.consent_status in ("granted", "paused")
-
-
-def _can_see(store: Store, me: Member, parent: Member, category: ShareCategory) -> bool:
-    if me.id == parent.id:
-        return True  # the parent always sees their own data
-    if not _consented(me, parent):
-        return False
-    return store.get_sharing(parent.id).allows(category)
-
-
-def _alert_visible(store: Store, me: Member, parent: Member, alert) -> bool:
-    """Red alerts always reach the family; amber only if the parent shares alerts."""
-    if alert.level == "red":
-        return _consented(me, parent)
-    return _can_see(store, me, parent, "alerts")
+# The sharing rules live in app/sharing.py (one copy, also used by the family MCP tools).
+_consented = consented
+_can_see = can_see
+_alert_visible = alert_visible
 
 
 def _require(store: Store, me: Member, parent: Member, category: ShareCategory) -> None:
@@ -856,7 +848,7 @@ def audit(
             "at": _iso(e.created_at),
             "actor": e.actor,
             "tool": e.tool,
-            "via": "mcp" if e.actor == "agent" else "dashboard",
+            "via": "mcp" if e.actor == "agent" or e.tool.startswith(FAMILY_MCP) else "dashboard",
             "args": json.loads(e.args_json) if shown else None,
             "result": result,
             "error": isinstance(result, dict) and "error" in result,

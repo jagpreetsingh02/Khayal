@@ -9,9 +9,11 @@
 - confirmed medicine strip: `create_reminder`.
 
 Every tool call goes through a real MCP client to the Khayal MCP server over
-streamable HTTP (MCP_SERVER_URL), with the parent's sender identity in `_meta`; the LLM
-(if any) never sets it. Passing a FastMCP object instead of a URL runs the same client
-in-process: tests and the offline terminal demo only.
+streamable HTTP (MCP_SERVER_URL). In token mode (default) each call carries a fresh
+60-second token signed with MCP_TOKEN_SECRET (sub = the parent's member id, role parent,
+the parent scopes); the parent's sender identity also goes in `_meta`, which the server
+only uses as a cross-check. The LLM (if any) never sets either. Passing a FastMCP object
+instead of a URL runs the same client in-process: tests and the offline terminal demo only.
 """
 
 import asyncio
@@ -27,6 +29,7 @@ from app.storage.base import Store
 from app.storage.models import Medicine, Member, Reading
 from mcp_server.guardrails import REFILL_MAX_DAYS
 from mcp_server.identity import sender_meta
+from mcp_server.tokens import HEALTH_SUBJECT, mint_token
 
 log = logging.getLogger(__name__)
 
@@ -81,20 +84,32 @@ def run_sync(make_coro) -> Any:
 
 class RuleAgent:
     def __init__(
-        self, store: Store, mcp: str | FastMCP, timeout: float = 15, secret: str = ""
+        self,
+        store: Store,
+        mcp: str | FastMCP,
+        timeout: float = 15,
+        secret: str = "",
+        token_secret: str = "",
     ) -> None:
         self.store = store
         self.mcp = mcp  # MCP server URL (streamable HTTP); a FastMCP object only in tests
         self.timeout = timeout
-        self._secret = secret  # MCP_SHARED_SECRET, sent as "Authorization: Bearer ..."
+        self._secret = secret  # legacy MCP_SHARED_SECRET (secret mode, mock only)
+        self._token_secret = token_secret  # MCP_TOKEN_SECRET: one signed token per call
 
     @property
     def transport(self) -> str:
         return "streamable-http" if isinstance(self.mcp, str) else "in-process"
 
-    def _client(self) -> Client:
-        # Over HTTP the server requires the shared secret; in-process (tests) has no HTTP.
-        auth = self._secret if isinstance(self.mcp, str) and self._secret else None
+    def _client(self, member_id: str = HEALTH_SUBJECT) -> Client:
+        """Over HTTP: a fresh parent token for `member_id` (token mode) or the shared secret
+        (secret mode). In-process (tests) has no HTTP, so no bearer."""
+        auth = None
+        if isinstance(self.mcp, str):
+            if self._token_secret:
+                auth = mint_token(self._token_secret, member_id, "parent")
+            elif self._secret:
+                auth = self._secret
         return Client(self.mcp, timeout=self.timeout, auth=auth)
 
     def call_tool(self, parent: Member, tool: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -102,7 +117,7 @@ class RuleAgent:
             raise PermissionError(f"Tool {tool!r} is not on the agent's allowlist.")
 
         async def call() -> dict[str, Any]:
-            async with self._client() as client:
+            async with self._client(parent.id) as client:
                 meta = sender_meta(parent.channel, parent.channel_ref)
                 result = await client.call_tool(tool, args, meta=meta)
                 return result.structured_content or {}
@@ -110,7 +125,7 @@ class RuleAgent:
         return run_sync(call)
 
     def ping(self) -> list[str]:
-        """Tool names the server exposes (raises if it cannot be reached)."""
+        """Tool names the server lists for a parent token (raises if it cannot be reached)."""
 
         async def tools() -> list[str]:
             async with self._client() as client:

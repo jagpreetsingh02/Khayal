@@ -10,9 +10,12 @@ Simulator: http://localhost:8000/simulator · Dashboard: http://localhost:8000/d
 (build the dashboard once first: cd dashboard && npm install && npm run build).
 
 The MCP server listens on MCP_SERVER_URL (default http://localhost:8001/mcp, localhost only);
-the API's agent calls it over streamable HTTP with "Authorization: Bearer <MCP_SHARED_SECRET>".
-When MCP_SHARED_SECRET is empty, a random one is made for this run and passed to both
-processes, so the demo needs no setup. Both share the SQLite file DATABASE_URL.
+the API's agent calls it over streamable HTTP with a fresh 60-second token per call, signed
+with MCP_TOKEN_SECRET (MCP_AUTH_MODE=token, the default). In mock mode an empty
+MCP_TOKEN_SECRET (or MCP_SHARED_SECRET, for the legacy MCP_AUTH_MODE=secret) gets a random
+one for this run, passed to both processes, so the demo needs no setup. The family gateway
+(scripts/family_gateway.py) mints its own tokens, so it needs MCP_TOKEN_SECRET set in .env.
+Both processes share the SQLite file DATABASE_URL.
 Ctrl+C stops both.
 """
 
@@ -58,8 +61,11 @@ def main(argv: list[str] | None = None) -> int:
     # `kill <pid>` (SIGTERM) should stop both servers too, not only Ctrl+C.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     settings = get_settings()
-    if not settings.mcp_shared_secret:  # one per run; children inherit it (env beats .env)
-        os.environ["MCP_SHARED_SECRET"] = secrets.token_urlsafe(32)
+    if settings.app_mode == "mock":  # one per run; children inherit it (env beats .env)
+        if not settings.mcp_token_secret:
+            os.environ["MCP_TOKEN_SECRET"] = secrets.token_urlsafe(32)
+        if not settings.mcp_shared_secret:
+            os.environ["MCP_SHARED_SECRET"] = secrets.token_urlsafe(32)
     mcp_port = urlparse(settings.mcp_server_url).port or 8001
     py = sys.executable
     if args.seed:

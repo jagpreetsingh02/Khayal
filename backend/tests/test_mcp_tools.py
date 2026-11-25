@@ -168,8 +168,12 @@ def test_unknown_or_missing_sender_is_refused(w):
 
 
 def test_child_sender_cannot_act_as_parent(w):
-    with pytest.raises(ToolError, match="not a parent"):
-        w.call("get_meds", sender=CHILD_REF)
+    for tool, args in (
+        ("log_reading", {"type": "bp", "values": {"systolic": 130, "diastolic": 80}}),
+        ("request_refill", {"med_id": "med_x", "qty": 1}),
+    ):
+        with pytest.raises(ToolError, match="scope, which this family caller does not hold"):
+            w.call(tool, args, sender=CHILD_REF)
 
 
 def test_extra_parent_id_argument_is_rejected(w):
