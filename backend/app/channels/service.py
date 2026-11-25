@@ -518,8 +518,9 @@ class KhayalService:
             if error and secret is not None:
                 error = scrub_secret(error, secret)
             if error:
+                # member id, not the address: phone numbers stay out of logs
                 log.warning("sending %s on %s to %s failed: %s", msg.kind, msg.channel,
-                            msg.to_ref, error)  # fmt: skip
+                            msg.member_id or "an unregistered sender", error)  # fmt: skip
             results.append(Delivery(ok=error is None, error=error))
         return results
 
