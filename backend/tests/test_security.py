@@ -448,7 +448,7 @@ def test_low_stock_demo_button_is_mock_only(dev_app):
 def test_dev_mode_with_simulator_channel_warns():
     long = "x" * 40
     s = Settings(_env_file=None, app_mode="dev", channel="simulator",
-                 session_secret=long, mcp_shared_secret=long)  # fmt: skip
+                 session_secret=long, mcp_token_secret=long)  # fmt: skip
     errors, warnings = config_problems(s)
     assert errors == [] and any("CHANNEL=simulator" in w for w in warnings)
 
@@ -502,8 +502,15 @@ def test_mcp_server_main_refuses_without_a_secret(monkeypatch):
     from mcp_server import server as mcp_module
 
     get_settings.cache_clear()
-    with pytest.raises(SystemExit, match="MCP_SHARED_SECRET is empty"):
+    with pytest.raises(SystemExit, match="MCP_TOKEN_SECRET is empty"):
         mcp_module.main()
+    monkeypatch.setenv("MCP_AUTH_MODE", "secret")  # legacy mode, mock only
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(SystemExit, match="MCP_SHARED_SECRET is empty"):
+            mcp_module.main()
+    finally:
+        get_settings.cache_clear()
 
 
 def test_mcp_server_binds_localhost_unless_mcp_host_is_set(monkeypatch):
@@ -511,7 +518,7 @@ def test_mcp_server_binds_localhost_unless_mcp_host_is_set(monkeypatch):
 
     calls: list[dict] = []
     monkeypatch.setattr(mcp_module.mcp, "run", lambda **kw: calls.append(kw))
-    monkeypatch.setenv("MCP_SHARED_SECRET", MCP_SECRET)
+    monkeypatch.setenv("MCP_TOKEN_SECRET", MCP_SECRET)
     monkeypatch.delenv("MCP_HOST", raising=False)
     get_settings.cache_clear()
     mcp_module.main()
@@ -532,14 +539,14 @@ def test_startup_check_lists_every_problem():
         app_mode="aws",
         channel="twilio",
         session_secret="",
-        mcp_shared_secret="short",
+        mcp_token_secret="short",
         public_base_url="",
         twilio_auth_token="",
     )
     errors, warnings = config_problems(s)
     text = "\n".join(errors)
     assert len(errors) == 4
-    for needle in ("SESSION_SECRET is not set", "MCP_SHARED_SECRET is shorter",
+    for needle in ("SESSION_SECRET is not set", "MCP_TOKEN_SECRET is shorter",
                    "PUBLIC_BASE_URL", "TWILIO_AUTH_TOKEN"):  # fmt: skip
         assert needle in text
     assert any("DASHBOARD_DEMO_TOKEN" in w for w in warnings)  # only a warning
@@ -552,11 +559,11 @@ def test_startup_check_lists_every_problem():
 def test_startup_check_telegram_webhook_needs_secret_and_mock_never_blocks():
     long = "x" * 40
     s = Settings(_env_file=None, app_mode="dev", channel="telegram", telegram_mode="webhook",
-                 session_secret=long, mcp_shared_secret=long)  # fmt: skip
+                 session_secret=long, mcp_token_secret=long)  # fmt: skip
     errors, _ = config_problems(s)
     assert errors == ["CHANNEL=telegram with TELEGRAM_MODE=webhook needs TELEGRAM_WEBHOOK_SECRET."]
     ok = Settings(_env_file=None, app_mode="dev", channel="telegram", telegram_mode="polling",
-                  session_secret=long, mcp_shared_secret=long)  # fmt: skip
+                  session_secret=long, mcp_token_secret=long)  # fmt: skip
     assert config_problems(ok)[0] == []
     mock = Settings(_env_file=None, app_mode="mock", channel="twilio")
     errors, warnings = config_problems(mock)

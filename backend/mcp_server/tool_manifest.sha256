@@ -1,1 +1,2 @@
-d3dd943de2d40a4d7f0008cc7745203759e95014e3d42f74cb11b93057a2447b  MCP tool manifest (mcp_server/manifest.py)
+50fd5d1028199ec7d01376da223dcf663c78fed0599dcac31647a53bb247f2b0  parent  MCP tools/list for a parent token (mcp_server/manifest.py)
+04a84385a968a53c77a465b41a6d6c857d3f57f3eeb2a72af86be28ab995979a  family  MCP tools/list for a family token (mcp_server/manifest.py)

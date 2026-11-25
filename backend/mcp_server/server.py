@@ -1,8 +1,12 @@
 """Khayal MCP server (brief §5.5).
 
 Guardrails built in:
-- The parent is resolved server-side from the request sender (see identity.py); no tool
-  takes a parent_id / member_id argument.
+- The caller is resolved server-side (identity.py): from the signed per-call token's `sub`
+  (token mode), with `_meta` only as a cross-check; no tool takes a parent_id / member_id.
+- Roles and scopes (scopes.py): a parent token may log, read, remind, alert and request
+  refills; a family token may only read (get_history, get_meds, weekly_summary) a parent in
+  its own family, only what that parent shares (app/sharing.py, the dashboard's rules), and
+  never even lists the write tools. Each family read is audited as "viewed by <member>".
 - log_reading only writes `unconfirmed` readings. Confirmation is the parent's read-back
   reply, handled server-side; there is no MCP tool that confirms a reading.
 - alert_family only fires for confirmed readings / server-evaluated rules, caps amber,
@@ -21,7 +25,9 @@ Guardrails built in:
 
 import json
 import re
+import unicodedata
 from collections.abc import Callable
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from statistics import mean
 from typing import Annotated, Any, Literal
@@ -49,19 +55,50 @@ from app.alerts.thresholds import (
 from app.config import get_settings
 from app.conversation.templates import format_value, read_back
 from app.reader.intake import build_reading
+from app.sharing import alert_visible, can_see, consented
 from app.storage import ConflictError, NotFoundError, Store, get_store
-from app.storage.models import Alert, AuditEntry, Medicine, Member, Reading, Refill, utcnow
+from app.storage.models import (
+    Actor,
+    Alert,
+    AuditEntry,
+    Medicine,
+    Member,
+    Reading,
+    Refill,
+    ShareCategory,
+    utcnow,
+)
 from app.storage.safe_text import NOTE_MAX, UnsafeTextError, check_note
-from mcp_server.auth import SharedSecretVerifier
+from mcp_server.auth import build_auth
 from mcp_server.guardrails import AMBER_MAX_PER_DAY, REFILL_MAX_DAYS
 from mcp_server.http_guard import guard_middleware
-from mcp_server.identity import resolve_parent, sender_from_context
+from mcp_server.identity import (
+    AuthMode,
+    Caller,
+    CallState,
+    IdentityMismatch,
+    meta_parent_id,
+    over_http,
+    require_parent,
+    resolve_caller,
+    token_claims,
+    token_scopes,
+)
+from mcp_server.scopes import FAMILY_SCOPES, PARENT_SCOPES, TOOL_SCOPES, tool_allowed
 from mcp_server.summary import build_summary_text, filter_summary
 
 TZ = "Asia/Kolkata"
 RANGE_DAYS = {"today": 1, "7d": 7, "14d": 14, "30d": 30}
 HHMM = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 RETAKE = "ask the parent to retake the photo (or type the numbers)."
+ParentName = Annotated[
+    str | None,
+    Field(
+        max_length=60,
+        description="Family members only, when the family has more than one parent: the "
+        "parent's name as registered with Khayal. Leave out otherwise.",
+    ),
+]
 
 
 class ReadingValues(BaseModel):
@@ -256,41 +293,93 @@ def _med_out(m: Medicine) -> MedicineOut:
     )
 
 
-class AuditMiddleware(Middleware):
-    """Writes every tool call, success or failure, to audit_log."""
+_CALL: ContextVar[CallState | None] = ContextVar("khayal_mcp_call", default=None)
 
-    def __init__(self, store_of) -> None:
+
+class AccessMiddleware(Middleware):
+    """Resolves the caller (token `sub`, or `_meta` in-process / secret mode), enforces each
+    tool's scope, filters tools/list by scope, and writes every tool call, success or
+    failure, to audit_log. A family member's read is audited as "viewed by <member>" on
+    the parent it read; no token or secret is ever written."""
+
+    def __init__(self, store_of, require_token: bool) -> None:
         self._store_of = store_of
+        self._require_token = require_token  # token mode with a verifier
+
+    async def on_list_tools(self, context: MiddlewareContext, call_next):
+        tools = await call_next(context)
+        verified = token_claims()
+        if verified is not None:
+            scopes = token_scopes(*verified)
+        elif self._require_token and over_http():
+            scopes = frozenset()
+        else:  # in-process or secret mode: no per-member token, every declared tool
+            scopes = PARENT_SCOPES | FAMILY_SCOPES
+        return [t for t in tools if tool_allowed(t.name, scopes)]
 
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         store: Store = self._store_of()
         app_clock.sync_from(store)  # the API may have advanced the demo clock
         name = context.message.name
         args = context.message.arguments or {}
-        parent_id = None
-        sender = sender_from_context(context.fastmcp_context)
-        if sender:
-            member = store.find_member_by_channel(*sender)
-            parent_id = member.id if member and member.role == "parent" else None
+        ctx = context.fastmcp_context
+        state = CallState()
 
-        def record(result: Any) -> None:
+        def record(result: Any, parent_id: str | None = None) -> None:
+            caller = state.caller
+            actor: Actor
+            if caller is not None and caller.role == "family":
+                actor, tool = "member", f"family_mcp:{name}"
+                logged = {"by": caller.member.name, "member_id": caller.member.id, **args}
+                parent_id = state.parent.id if state.parent else None
+                if isinstance(result, dict) and "error" not in result:
+                    result = {"viewed": True, "read_only": True}  # the data itself is not copied
+            else:
+                actor, tool, logged = "agent", name, args
+                if caller is not None and caller.role == "parent":
+                    parent_id = caller.member.id
+                parent_id = parent_id or meta_parent_id(ctx, store)
             store.add_audit(
                 AuditEntry(
-                    actor="agent",
-                    tool=name,
-                    args_json=json.dumps(args, default=str),
+                    actor=actor,
+                    tool=tool,
+                    args_json=json.dumps(logged, default=str),
                     result_json=json.dumps(result, default=str),
                     parent_id=parent_id,
                 )
             )
 
+        reset = _CALL.set(state)
         try:
+            state.caller = resolve_caller(ctx, store, self._require_token)
+            if name not in TOOL_SCOPES:
+                raise ToolError(f"Unknown tool: {name}")
+            if not tool_allowed(name, state.caller.scopes):
+                need = " or ".join(TOOL_SCOPES[name])
+                raise ToolError(
+                    f"Refused: {name} needs the {need} scope, which this "
+                    f"{state.caller.role} caller does not hold."
+                )
             result = await call_next(context)
+        except IdentityMismatch as exc:
+            # Audited on the token's own parent (the one whose identity was presented).
+            mine = exc.token_member
+            record(
+                {"error": str(exc), "refused": "identity_mismatch", "token_member": mine.id},
+                parent_id=mine.id if mine.role == "parent" else None,
+            )
+            raise
         except Exception as exc:
             record({"error": str(exc)})
             raise
+        finally:
+            _CALL.reset(reset)
         record(result.structured_content)
         return result
+
+
+def _norm_name(name: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", name).casefold().split())
 
 
 def create_server(
@@ -298,13 +387,26 @@ def create_server(
     notifier: Notifier | None = None,
     clock: Callable[[], datetime] = utcnow,
     secret: str | None = None,
+    token_secret: str | None = None,
 ) -> FastMCP:
     """Build the MCP server. Defaults: store from settings; family messages go to the
-    store's outbox, from where the API delivers them. `secret` (default MCP_SHARED_SECRET):
-    HTTP requests must send "Authorization: Bearer <secret>"; empty = no HTTP auth (only
-    for in-process tests: main() refuses to serve without a secret)."""
-    if secret is None:
-        secret = get_settings().mcp_shared_secret
+    store's outbox, from where the API delivers them.
+
+    HTTP auth: `token_secret` = token mode (a signed per-call JWT, tokens.py); `secret` =
+    legacy shared-secret mode. Neither given: MCP_AUTH_MODE and its secret from settings.
+    An empty secret = no HTTP auth (only for in-process tests: main() refuses to serve
+    without one)."""
+    settings = get_settings()
+    mode: AuthMode
+    if token_secret is not None:
+        mode = "token"
+    elif secret is not None:
+        mode = "secret"
+    else:
+        mode = settings.mcp_auth_mode
+        secret, token_secret = settings.mcp_shared_secret, settings.mcp_token_secret
+    auth = build_auth(mode, secret or "", token_secret or "")
+    require_token = mode == "token" and auth is not None
 
     def db() -> Store:
         return store or get_store()
@@ -322,12 +424,61 @@ def create_server(
             "doctor-set limit is crossed, request refills for family approval. Never "
             "diagnose or give dosing advice."
         ),
-        auth=SharedSecretVerifier(secret) if secret else None,
+        auth=auth,
     )
-    mcp.add_middleware(AuditMiddleware(db))
+    mcp.add_middleware(AccessMiddleware(db, require_token))
+
+    def caller_of(ctx: Context) -> Caller:
+        state = _CALL.get()
+        if state is not None and state.caller is not None:
+            return state.caller
+        return resolve_caller(ctx, db(), require_token)
 
     def parent_of(ctx: Context) -> Member:
-        return resolve_parent(ctx, db())
+        return require_parent(caller_of(ctx))
+
+    def pick_parent(me: Member, parent_name: str | None) -> Member:
+        """A parent in the family member's own family, by registered name only."""
+        parents = db().list_members(me.family_id, role="parent")
+        choices = ", ".join(sorted(p.name for p in parents))
+        if not parents:
+            raise ToolError("There is no parent in your family on Khayal.")
+        if parent_name is None:
+            if len(parents) == 1:
+                return parents[0]
+            raise ToolError(f"Your family has {len(parents)} parents: pass parent_name, one of: "
+                            f"{choices}.")  # fmt: skip
+        key = _norm_name(parent_name)
+        matches = [p for p in parents if _norm_name(p.name) == key] or [
+            p
+            for p in parents
+            if _norm_name(p.name).split()[:1] == [key]  # first name
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        why = "matches more than one parent" if matches else "is not a parent in your family"
+        raise ToolError(f"parent_name {why}; use one of: {choices}.")
+
+    def readable_parent(
+        ctx: Context, category: ShareCategory, parent_name: str | None
+    ) -> tuple[Caller, Member]:
+        """Read tools: a parent reads their own data; a family member reads a parent in
+        their own family, only what that parent shares (app/sharing.py, as the dashboard)."""
+        caller = caller_of(ctx)
+        if caller.role == "parent":
+            if parent_name is not None:
+                raise ToolError("parent_name is for family members; a parent reads their own data.")
+            return caller, parent_of(ctx)
+        parent = pick_parent(caller.member, parent_name)
+        state = _CALL.get()
+        if state is not None:
+            state.parent = parent  # audited on this parent, also when refused below
+        if not consented(caller.member, parent):
+            raise ToolError(f"Nothing is shared: {parent.name} has not agreed to Khayal, or "
+                            "has withdrawn consent.")  # fmt: skip
+        if not can_see(db(), caller.member, parent, category):
+            raise ToolError(f"{parent.name} has not shared {category} with the family.")
+        return caller, parent
 
     def own_medicine(parent: Member, med_id: str) -> Medicine:
         try:
@@ -401,11 +552,13 @@ def create_server(
         range: Literal["today", "7d", "14d", "30d"] = "7d",
         type: Literal["bp", "glucose"] | None = None,
         response_format: Literal["concise", "detailed"] = "concise",
+        parent_name: ParentName = None,
     ) -> ToolResult:
         """Confirmed readings for the parent over a time range (read-only). concise
         (default): counts, latest, lowest, highest and average per type. detailed: also
-        every reading with its id and time."""
-        parent = parent_of(ctx)
+        every reading with its id and time. A family member sees this only if the parent
+        shares readings."""
+        _, parent = readable_parent(ctx, "readings", parent_name)
         since = clock() - timedelta(days=RANGE_DAYS[range])
         rows = db().list_readings(parent.id, since=since, type=type, status="confirmed")
         bp = _stats([r for r in rows if r.type == "bp"])
@@ -429,9 +582,10 @@ def create_server(
         annotations=_annotations("Read the medicine list", read_only=True, idempotent=True),
         output_schema=_schema(MedsOut),
     )
-    def get_meds(ctx: Context) -> ToolResult:
-        """The parent's medicines with reminder times and stock (read-only)."""
-        parent = parent_of(ctx)
+    def get_meds(ctx: Context, parent_name: ParentName = None) -> ToolResult:
+        """The parent's medicines with reminder times and stock (read-only). A family member
+        sees this only if the parent shares medicines."""
+        _, parent = readable_parent(ctx, "medicines", parent_name)
         meds = [_med_out(m) for m in db().list_medicines(parent.id)]
         names = ", ".join(f"{m.brand} ({m.days_left} days left)" for m in meds) or "none"
         return _result(MedsOut(medicines=meds), f"{len(meds)} medicines: {names}.")
@@ -676,17 +830,23 @@ def create_server(
         annotations=_annotations("Weekly summary (descriptive)", read_only=True, idempotent=True),
         output_schema=_schema(SummaryOut),
     )
-    def weekly_summary(ctx: Context) -> ToolResult:
+    def weekly_summary(ctx: Context, parent_name: ParentName = None) -> ToolResult:
         """Descriptive 7-day summary: counts, ranges and the home BP average against the
         limits the doctor set and the 135/85 home reference. No recipients or text are
-        accepted; the server writes it and filters diagnosis / dosing words."""
-        parent = parent_of(ctx)
+        accepted; the server writes it and filters diagnosis / dosing words. A family member
+        needs the parent to share readings; medicine and amber-alert lines follow the
+        parent's sharing too."""
+        caller, parent = readable_parent(ctx, "readings", parent_name)
         s = db()
         end = clock()
         start = end - timedelta(days=7)
         readings = s.list_readings(parent.id, since=start, status="confirmed")
         doses = s.list_dose_events(parent.id, since=start, until=end)
         alerts = s.list_alerts(parent.id, since=start)
+        if caller.role == "family":  # the dashboard's rules, per category
+            me = caller.member
+            doses = doses if can_see(s, me, parent, "medicines") else []
+            alerts = [a for a in alerts if alert_visible(s, me, parent, a)]
         raw = build_summary_text(
             parent, readings, doses, alerts, thresholds_for(parent), start, end, TZ
         )
@@ -708,16 +868,23 @@ mcp = create_server()
 
 def main() -> None:
     """Run the server on MCP_HOST (default 127.0.0.1) and the port/path of MCP_SERVER_URL
-    (default http://localhost:8001/mcp). Refuses to start without MCP_SHARED_SECRET
-    (scripts/start.py makes one per run)."""
+    (default http://localhost:8001/mcp). Refuses to start without the secret of
+    MCP_AUTH_MODE: MCP_TOKEN_SECRET (token, default) or MCP_SHARED_SECRET (secret, mock only).
+    scripts/start.py makes the missing one per run in mock mode."""
     from app.startup_checks import enforce
 
     settings = get_settings()
     enforce(settings, "mcp")
-    if not settings.mcp_shared_secret:
+    name, value = (
+        ("MCP_TOKEN_SECRET", settings.mcp_token_secret)
+        if settings.mcp_auth_mode == "token"
+        else ("MCP_SHARED_SECRET", settings.mcp_shared_secret)
+    )
+    if not value:
         raise SystemExit(
-            "MCP_SHARED_SECRET is empty: set it in .env (same value for the API), "
-            "or start everything with scripts/start.py, which makes one per run."
+            f"{name} is empty (MCP_AUTH_MODE={settings.mcp_auth_mode}): set it in .env (same "
+            "value for the API), or start everything with scripts/start.py, which makes one "
+            "per run in mock mode."
         )
     url = urlparse(settings.mcp_server_url)
     mcp.run(

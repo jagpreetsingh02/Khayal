@@ -54,9 +54,15 @@ class Settings(BaseSettings):
     # one per start (sessions end on restart). Required in dev/aws.
     session_secret: str = ""
     session_ttl_hours: float = 12
-    # The API's agent proves itself to the MCP server with "Authorization: Bearer <this>".
-    # scripts/start.py makes a random one per run when empty.
+    # How the API proves itself to the MCP server. token (default): a short-lived HS256 JWT
+    # per call (sub = member id, role, scopes), signed with MCP_TOKEN_SECRET. secret (legacy,
+    # APP_MODE=mock only): "Authorization: Bearer <MCP_SHARED_SECRET>", sender from _meta.
+    mcp_auth_mode: Literal["secret", "token"] = "token"
+    # 32+ characters. scripts/start.py / Docker make a random one per run in mock mode.
+    mcp_token_secret: str = ""
     mcp_shared_secret: str = ""
+    # scripts/family_gateway.py (local demo bridge): the family member its tokens are for.
+    family_gateway_member_id: str = ""
     tz: str = "Asia/Kolkata"
     # Finished inbox rows (metadata only: payloads are blanked when done) and failed ones
     # (payload kept for inspection) are deleted after this many days.

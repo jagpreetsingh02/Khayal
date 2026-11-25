@@ -545,7 +545,10 @@ def build_service(settings: Settings | None = None) -> KhayalService:
         from app.channels.twilio_whatsapp import TwilioWhatsAppChannel
 
         channels.append(TwilioWhatsAppChannel.from_settings(settings))
-    agent = RuleAgent(store, settings.mcp_server_url, secret=settings.mcp_shared_secret)
+    if settings.mcp_auth_mode == "token":
+        agent = RuleAgent(store, settings.mcp_server_url, token_secret=settings.mcp_token_secret)
+    else:  # legacy shared secret, APP_MODE=mock only (startup check)
+        agent = RuleAgent(store, settings.mcp_server_url, secret=settings.mcp_shared_secret)
     simulator = channels[0]
     return KhayalService(
         store,

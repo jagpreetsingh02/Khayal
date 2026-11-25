@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.165",
     "fastmcp>=4.2",
     "httpx>=0.28.1",
+    "joserfc>=1.8",
     "pillow>=13.0.0",
     "pydantic>=2.14",
     "pydantic-settings>=2.16",
