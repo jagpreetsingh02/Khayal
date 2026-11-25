@@ -314,6 +314,27 @@ def test_audit_details_hidden_for_unshared_categories(dash):
     assert refill_call["redacted"] is True and refill_call["args"] is None
 
 
+def test_a_family_mcp_read_shows_on_the_parents_audit_as_viewed_by(dash):
+    import asyncio
+
+    from fastmcp import Client
+
+    from mcp_server.identity import sender_meta
+
+    async def read():
+        async with Client(dash.service.agent.mcp) as c:
+            meta = sender_meta("simulator", dash.ravi.channel_ref)
+            return await c.call_tool("get_history", {"range": "7d"}, meta=meta)
+
+    assert asyncio.run(read()).structured_content["count"] > 0
+    for viewer in (dash.parent, dash.priya):
+        rows = dash.c.get("/api/audit", headers=dash.login(viewer)).json()["entries"]
+        [row] = [r for r in rows if r["tool"] == "family_mcp:get_history"]
+        assert row["actor"] == "member" and row["via"] == "mcp" and not row["redacted"]
+        assert row["args"]["by"] == "Ravi Gowda"
+        assert row["result"] == {"viewed": True, "read_only": True}
+
+
 def test_other_familys_parent_is_not_visible(dash):
     from app.storage.models import Family, Member
 

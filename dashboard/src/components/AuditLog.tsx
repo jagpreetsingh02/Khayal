@@ -12,6 +12,14 @@ function summarize(row: AuditRow): string {
   if (row.redacted) return 'Details hidden: the parent has not shared this category.'
   const a = obj(row.args)
   const r = obj(row.result)
+  if (row.tool.startsWith('family_mcp:')) {
+    const what = { get_history: 'the readings', get_meds: 'the medicine list', weekly_summary: 'the weekly summary' }[
+      row.tool.slice('family_mcp:'.length)
+    ]
+    return row.error
+      ? `${String(a.by)} tried to view ${what ?? 'data'} through MCP; refused: ${String(r.error ?? 'error')}`
+      : `Viewed by ${String(a.by)}: ${what ?? 'data'}, through the family MCP connection (read-only).`
+  }
   if (row.error) return `Refused by the server: ${String(r.error ?? 'error')}`
   switch (row.tool) {
     case 'log_reading': {

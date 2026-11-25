@@ -64,6 +64,7 @@ from app.voice import phrases
 TZ = ZoneInfo("Asia/Kolkata")
 RANGE_DAYS = {"7d": 7, "14d": 14, "30d": 30, "90d": 90}
 APPROVED_STATES = ("approved", "sent_to_pharmacy", "fulfilled")
+FAMILY_MCP = "family_mcp:"  # audit tool prefix of a family member's read through MCP
 # Which sharing category an audit entry belongs to (children see details only if shared).
 TOOL_CATEGORY: dict[str, ShareCategory] = {
     "log_reading": "readings",
@@ -847,7 +848,7 @@ def audit(
             "at": _iso(e.created_at),
             "actor": e.actor,
             "tool": e.tool,
-            "via": "mcp" if e.actor == "agent" else "dashboard",
+            "via": "mcp" if e.actor == "agent" or e.tool.startswith(FAMILY_MCP) else "dashboard",
             "args": json.loads(e.args_json) if shown else None,
             "result": result,
             "error": isinstance(result, dict) and "error" in result,
