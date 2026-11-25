@@ -31,7 +31,14 @@ def test_health_checks_the_database_and_mcp():
     store, *_ = family("simulator", "+919800000001", "simulator", "+2")
     code, body = _health(service(store))
     assert code == 200
-    assert body == {"status": "ok", "mode": "mock", "database": "ok", "mcp": "in-process"}
+    inbox = {"pending": 0, "processing": 0, "done": 0, "failed": 0, "oldest_pending_s": None}
+    assert body == {
+        "status": "ok",
+        "mode": "mock",
+        "database": "ok",
+        "mcp": "in-process",
+        "inbox": inbox,
+    }
 
 
 def test_health_reports_a_reachable_mcp_server_over_http():

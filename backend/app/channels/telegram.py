@@ -5,8 +5,10 @@ Local dev uses long polling (getUpdates), so no public URL is needed. A webhook
 Sender mapping: the Telegram user id is the member's `channel_ref` (channel "telegram");
 `scripts/add_member.py` registers one. Sending "/id" to the bot replies with your id.
 Private chats only. Photos come via getFile (Telegram allows up to 20 MB).
-Duplicates: every update_id is recorded (webhook and polling); a repeated one is skipped,
-so a webhook retry or a restart that re-reads updates never logs a reading twice.
+Duplicates: every update is written to the inbox with its update_id (webhook and polling);
+a repeated one is skipped, so a webhook retry or a restart that re-reads updates never logs
+a reading twice. The poller moves its offset past an update only after it is stored, so an
+update that could not be stored is fetched again.
 
 The bot token is part of every API URL, so URLs are never logged or put in errors.
 """
@@ -98,27 +100,32 @@ class TelegramChannel(Channel):
     # --- long polling (local dev) ---
 
     def fetch_updates(self, timeout: int = 25) -> list[dict[str, Any]]:
+        """Updates after the current offset. The offset moves on only in `_stored`."""
         params: dict[str, Any] = {"timeout": timeout, "allowed_updates": ["message"]}
         if self.offset is not None:
             params["offset"] = self.offset
-        updates = self._api("getUpdates", **params)
-        if updates:
-            self.offset = max(u["update_id"] for u in updates) + 1
-        return updates
+        return self._api("getUpdates", **params)
+
+    def _stored(self, update: dict[str, Any]) -> None:
+        """This update is in the inbox: Telegram may forget it (next getUpdates)."""
+        uid = update.get("update_id")
+        if isinstance(uid, int):
+            self.offset = max(self.offset or 0, uid + 1)
 
     def poll_once(self, service, timeout: int = 25) -> int:
-        """Fetch and process updates one by one in this thread (tests, scripts)."""
+        """Fetch updates, store them in the inbox and process them in this thread (tests,
+        scripts)."""
         updates = self.fetch_updates(timeout)
         for update in updates:
-            ticket = service.accept("telegram", update, update_id(update))
-            if ticket is not None:
-                service.process("telegram", update, ticket)
+            service.accept("telegram", update, update_id(update))
+            self._stored(update)
+        service.run_inbox()
         return len(updates)
 
     async def start_polling(self, service, inbound) -> None:
         """Background task started by the API when CHANNEL=telegram (polling mode). Each
-        update is accepted in order, then processed in the background (`inbound`), so one
-        parent's slow photo does not hold up the others."""
+        update is written to the inbox in order (`inbound`), then processed by its worker,
+        so one parent's slow photo does not hold up the others."""
         await asyncio.to_thread(self._api, "deleteWebhook")  # getUpdates refuses while one is set
         log.info("Telegram long polling started")
         while True:
@@ -129,7 +136,13 @@ class TelegramChannel(Channel):
                 await asyncio.sleep(5)
                 continue
             for update in updates:
-                await inbound.accept("telegram", update, update_id(update))
+                try:
+                    await inbound.accept("telegram", update, update_id(update))
+                except Exception:  # not stored: keep the offset, fetch it again
+                    log.exception("could not store a Telegram update; fetching it again in 5 s")
+                    await asyncio.sleep(5)
+                    break
+                self._stored(update)
 
 
 def update_id(update: dict[str, Any]) -> str | None:

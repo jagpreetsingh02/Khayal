@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # scripts/start.py makes a random one per run when empty.
     mcp_shared_secret: str = ""
     tz: str = "Asia/Kolkata"
+    # Finished inbox rows (metadata only: payloads are blanked when done) and failed ones
+    # (payload kept for inspection) are deleted after this many days.
+    inbox_retention_days: float = 7
 
 
 @lru_cache

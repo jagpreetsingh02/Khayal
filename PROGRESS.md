@@ -7,13 +7,11 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
 ## Current status
 - Submission (Phase 1 of judging) is in: tag **`submission-phase1`** = the exact submitted
   commit. Repo may change until **26 Nov 2026**; `main` must stay demo-ready for the pitch.
-- Current work stream: **Hardening** (below). H1-H4 done and merged (tags
-  `hardening-h1-done` … `hardening-h4-done`). CI green on `main`.
+- Current work stream: **Hardening** (below). H1-H5 and **S1 durable inbox** done and merged
+  (tags `hardening-h1-done` … `hardening-h5-done`, `feature-s1-done`). CI green on `main`.
 - Current branch: `main`
-- **Next step: ask the user.** H4 item 5 (durable inbox: webhook payloads into an inbox table
-  with unique provider message id before the 200, processed from it, retried on startup) was
-  **not started** — deferred to keep `main` stable for the 26 Nov pitch. Other candidates:
-  Postgres/DynamoDB adapter, schema versioning, structured logging, DPDP export/delete.
+- **Next step: ask the user.** Candidates: Postgres/DynamoDB adapter (the inbox needs one
+  too), schema versioning, structured logging, DPDP export/delete.
 - **Pitch demo path changed (H4):** severe BP now asks the warning-signs question first:
   bp high → 1 → **2** → Skip 5 min → bp high → 1 → **2** → RED. (Answer 1 = RED at once.)
 
@@ -22,26 +20,23 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   inbound dedup, per-member FIFO; signed sessions, codes, rate limits, MCP bearer, startup check,
   CSP; simulator mock-only, mypy 0, CI (3.11+3.13, dashboard, audit), Docker + Compose,
   `/health`. Details: README "Security", "Reliability", "Production readiness".
+- [x] **S1 durable inbox** (`feature-s1-durable-inbox`, tag `feature-s1-done`): webhooks and
+  poller write `inbox` (insert = dedup) before the ack; worker `app/channels/inbound.py`
+  (claim + 60 s lease renewed, retries 5 s/30 s/2 m/10 m, 5th = `failed` + audit
+  `inbound_failed`, recovery of expired leases, drain); payload blanked when done, purge after
+  `INBOX_RETENTION_DAYS`. `inbound_seen` moved into `inbox` on open. Replay safety:
+  `engine.Replay` + `_msg` mark + snapshot; reading id = hash(inbox id); unique
+  `alerts(reading_id, rule)`. Details: README "Reliability". Tests `test_inbox.py` (24).
 - [x] **H5 silent parent** (`hardening-h5-silence`, tag `hardening-h5-done`): severe BP with
   no answer to the warning-signs question (`no_reply`) and no confirmed repeat in 15 min =
   RED `bp_severe_no_reply` ("…did not answer… Please call her now"), normal red path; answered
   "no" + no repeat stays amber. `scripts/chat_demo.py` now answers the question ("2").
-- [x] **H4 clinical + MCP** (`hardening-h4-mcp`, tag `hardening-h4-done`): 2025 AHA/ACC
-  warning-signs question at severe BP (yes = RED + 108/112; no / no reply 5 min (audited) =
-  rest + repeat; asked again at the repeat; asymptomatic repeat = RED "Urgent: contact her
-  doctor today"); ADA 2026 glucose floors 54/70 (settings only stricter), 54-69 amber + recheck
-  15 min (none = amber `glucose_low_no_recheck`), faint/confused/help = RED; doctor's low-sugar
-  plan (dashboard Settings card, `/api/parents/{id}/care-plan`, `add_member --low-sugar-plan`);
-  "limit her doctor set" via `Member.pronoun` (seeds: she); weekly home average vs 135/85.
-  MCP: titles, all 4 annotations, output schemas + text summary (`ToolResult`), actionable
-  `ToolError`s, `get_history.response_format`, `alert_family(level, reading_id)` only,
-  `create_reminder.note`, `strict_input_validation`. Plausibility 60-260/30-160, HI/LO, unit
-  mix-ups. Reader: no free text, strips return an offered id only (`cat:<slug>` / `med_...`).
-  Names/medicines/notes/plan checked at write time (`app/storage/safe_text.py`). Host/Origin
-  guard (`mcp_server/http_guard.py`). Manifest pin (`mcp_server/manifest.py`,
-  `tool_manifest.sha256`; update: `uv run python -m mcp_server.manifest --update`).
-  Tests: `test_redteam.py`, `test_clinical.py`, `test_tool_metadata.py`; 449 -> 607 (+2 live skipped).
-  Real-photo harness: `accuracy_test.py --import/--real`, `samples/real_photos/`.
+- [x] **H4 clinical + MCP** (`hardening-h4-mcp`, tag `hardening-h4-done`): AHA/ACC warning-signs
+  question at severe BP, ADA 2026 glucose floors 54/70, doctor's low-sugar plan, pronouns; MCP
+  titles/annotations/output schemas, `alert_family(level, reading_id)` only, write-time text
+  checks (`app/storage/safe_text.py`), Host/Origin guard, manifest pin (update:
+  `uv run python -m mcp_server.manifest --update`); red-team/clinical/metadata tests;
+  real-photo harness `accuracy_test.py --import/--real`. Details: README.
 
 ## Phase checklist
 - [x] Phase 0 — setup · [x] Phase 1 — MCP core + storage · [x] Phase 2 — reader + read-back
@@ -54,13 +49,11 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   Either `VOICE=mock` locally (browser en-IN voice) or a paid plan + an Indian voice id.
 - Local only: in `.env` set `DATABASE_URL=sqlite:///./khayal.db` and rename
   `backend/care_circle.db` (+ `-wal`/`-shm`) to `khayal.db*` with servers stopped, or reseed.
-  (GitHub repo rename to `Khayal` is done.)
 - Docker uses your `.env` if present: it has `LLM_PROVIDER=groq` + keys, so `docker compose up`
   would read photos with Groq. For a keyless run: `KHAYAL_ENV_FILE=.env.example docker compose up`.
 - **Real photos** of Indian home devices for a real accuracy number: none yet. Public sets were
   unusable (Oxford zip gone/no licence; Roboflow needs an account key + digit-box labels only).
   Optional: a free Roboflow API key would allow a public-photo run.
-- ElevenLabs key lacks `user_read` permission (plan/credit usage can't be read via API; harmless).
 - GitHub repo description + topics (suggested in the Phase 6 summary; set in repo settings).
 - AWS: deploy only if the user approves paid resources; Bedrock model + AgentCore availability in
   ap-south-1 unconfirmed.
@@ -97,15 +90,11 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   `_meta` = `ctx.request_context.meta`; audit + clock sync in `Middleware.on_call_tool`.
 - Dashboard: Vite 8 (`base: '/dashboard/'`), React 19, TS 7, Recharts 3, oxlint (no refs/Date.now
   in render). Chart colours validated: blue `#2a78d6` + aqua `#1baf7a`; lines `linear`.
-- ElevenLabs (checked 23 Nov): TTS `POST /v1/text-to-speech/{voice_id}?output_format=mp3_44100_64`
-  (`xi-api-key`; body text, model_id `eleven_v4_turbo`, language_code hi/en); STT
-  `POST /v1/speech-to-text` (`scribe_v3`, reply language ISO 639-3, we send no hint). Free plan:
-  premade voices only (Library voices -> 402), ~1 credit/char.
-- Docker (29.7, Compose v5.3): Compose `env_file` keeps the inline comment of an EMPTY value
-  (`X=   # note` -> "# note"); non-empty values are fine. docker/entrypoint.sh blanks values
-  starting with `#`. Build: `docker compose build` (3 services share one image `khayal:local`).
-  Desktop may need starting: `open -a Docker`. Test runs: `KHAYAL_ENV_FILE=<file>`,
-  `KHAYAL_PORT=8010`, `-p khayal-devtest`.
+- ElevenLabs (23 Nov): TTS `/v1/text-to-speech/{voice_id}` (`eleven_v4_turbo`), STT
+  `/v1/speech-to-text` (`scribe_v3`); free plan = premade voices only (Library -> 402).
+- Docker (29.7, Compose v5.3): `env_file` keeps the inline comment of an EMPTY value;
+  docker/entrypoint.sh blanks values starting with `#`. Test runs: `KHAYAL_ENV_FILE=<file>`,
+  `KHAYAL_PORT=8010`, `-p khayal-devtest` (Desktop may need `open -a Docker`).
 - CI actions (checked 24 Nov): checkout@v7, setup-node@v7, **setup-uv has no moving major tag**
   -> `astral-sh/setup-uv@v10.4.0`. mypy 2.4.1. FastAPI 0.165 includes routers lazily
   (`app.routes` shows `_IncludedRouter`), so test routes by requests, not introspection.
@@ -122,8 +111,17 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   template, so the outbox retries). Engine standalone (`drain_family=True`: tests, chat_demo)
   marks outbox rows delivered when returned; inside the service it never touches the outbox.
   SQLite 3.50 (`UPDATE ... RETURNING` for claims). Calls: `CallProvider.can_call(member)`.
+- Inbox: tests patch `app.clock.real_now` (leases/retries); `SQLiteStore.close()` takes the lock
+  (closing during a worker query segfaulted). Live kill test recipe: scratch DB, MCP + uvicorn
+  started directly, `CHANNEL=twilio` with a dummy token, `HTTPS_PROXY` to a closed port.
 
 ## Decisions log
+- 2026-11-24 (S1): inbox times use the **real** clock (leases/retention), the engine uses the
+  message's arrival time on the demo clock (stored in the payload). `inbound_seen` folded into
+  `inbox`. A retried (errored) message does **not** block the parent's newer messages (a
+  STOP or a warning-signs "1" must not wait ~13 min behind a failing download); the replay
+  snapshot is only restored if the `_msg` mark shows nothing ran since. Simulator stays
+  synchronous (no inbox). Delivery-failure logs use the member id, not the phone number.
 - 2026-11-24 (H4): asymptomatic severe repeat stays **red** (rings family) with "contact her
   doctor today" wording; no-recheck after a low sugar is **amber** (respects sharing, cap).
   One alert per (reading, rule) via `alerts.rule`; `alert_family` sends the most urgent unsent
@@ -155,10 +153,6 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   `init` writes mock secrets once; dev/aws startup check exits 1 on unsafe config.
 
 ## Session log (newest first, one line each)
-- 2026-11-24: Hardening H5 — silent parent at severe BP = red; 607 -> 614 tests.
-- 2026-11-24: Hardening H4 — clinical rules, MCP metadata, red-team suite (mutation-checked),
-  manifest pin (same hash on 3.11/3.12/3.14), real-photo harness; start.py demo walked over
-  HTTP (mock providers, scratch DB): read-back, severe → question → repeat → RED, refill
-  approve, MCP 403/401. Durable inbox deferred.
-- 2026-11-24: Hardening H1 (409 tests), H2 (439), H3 (449; CI + Docker checked locally).
+- 2026-11-24/25: S1 durable inbox — 614 -> 638 tests (+2 live skipped); real-process kill test OK.
+- 2026-11-24: H1 (409) · H2 (439) · H3 (449) · H4 (607, demo walked over HTTP) · H5 (614).
 - 2026-11-22/23: Phases 0-6 + chores done (387 tests at phase 6, 393 after chores).

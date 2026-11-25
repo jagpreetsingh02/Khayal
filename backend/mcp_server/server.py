@@ -49,7 +49,7 @@ from app.alerts.thresholds import (
 from app.config import get_settings
 from app.conversation.templates import format_value, read_back
 from app.reader.intake import build_reading
-from app.storage import NotFoundError, Store, get_store
+from app.storage import ConflictError, NotFoundError, Store, get_store
 from app.storage.models import Alert, AuditEntry, Medicine, Member, Reading, Refill, utcnow
 from app.storage.safe_text import NOTE_MAX, UnsafeTextError, check_note
 from mcp_server.auth import SharedSecretVerifier
@@ -586,17 +586,28 @@ def create_server(
         text = f"{final.level.upper()} alert for {parent.name}: {final.reason}"
         # A phone call only for a RED alert on a confirmed reading (never for amber / doses).
         call = final.level == "red" and bool(reading_id) and get_settings().call_provider != "none"
-        alert = s.add_alert(
-            Alert(
-                parent_id=parent.id,
-                level=stored_level,
-                reason=final.reason,
-                reading_id=reading_id,
-                rule=final.rule,
-                notified_member_ids=[m.id for m in family],
-                created_at=clock(),
+        try:
+            alert = s.add_alert(
+                Alert(
+                    parent_id=parent.id,
+                    level=stored_level,
+                    reason=final.reason,
+                    reading_id=reading_id,
+                    rule=final.rule,
+                    notified_member_ids=[m.id for m in family],
+                    created_at=clock(),
+                )
             )
-        )
+        except ConflictError:  # the database's one-alert-per-(reading, rule) guard
+            dup = next(
+                (a for a in s.list_alerts(parent.id) if a.reading_id == reading_id
+                 and a.rule == final.rule),
+                None,
+            )  # fmt: skip
+            return _result(
+                AlertOut(sent=False, already_sent=True, alert_id=dup.id if dup else None),
+                "Already sent for this reading.",
+            )
         # Written to the outbox with the alert id: delivery is tracked per alert, and red
         # messages are retried until a channel accepts them (app/channels/service.py).
         for member in family:
