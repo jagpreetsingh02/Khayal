@@ -4,8 +4,12 @@ Run from `backend/` so they use its environment and `DATABASE_URL`.
 
 - `start.py`: run the MCP server and the API together (the demo). Simulator at
   http://localhost:8000/simulator, dashboard at http://localhost:8000/dashboard/ (after
-  `npm run build` in `dashboard/`). `--seed` wipes and seeds 14 days of demo data first.
+  `npm run build` in `dashboard/`). `--seed` wipes and seeds 14 days of demo data first: the
+  one-command demo reset. It refuses (and changes nothing) while port 8000 or 8001 is in use.
   `uv run python ../scripts/start.py [--seed] [--port 8000]`
+- `family_gateway.py`: local demo bridge (stdio) that gives an MCP client (MCP Inspector,
+  Claude Desktop) a family member's read-only view; `--who` lists the demo family's member ids.
+  Needs `MCP_TOKEN_SECRET` and `FAMILY_GATEWAY_MEMBER_ID` in `.env`: [docs/FAMILY_MCP.md](../docs/FAMILY_MCP.md).
 - `add_member.py`: register a Telegram user id or WhatsApp number as a parent/child of the
   demo family (server-side sender mapping).
   `uv run python ../scripts/add_member.py --channel telegram --ref 123456789 --role parent --name Me`
@@ -13,7 +17,8 @@ Run from `backend/` so they use its environment and `DATABASE_URL`.
   four medicines, doctor-set limits and 14 days of BP / glucose readings and dose events.
   `uv run python ../scripts/seed_demo.py`
 - `mcp_client_demo.py`: connect to the running MCP server with a real MCP client
-  (streamable HTTP), list the tools and call `log_reading` as the seeded parent.
+  (streamable HTTP), list the tools and call `log_reading` as the seeded parent (with a parent
+  token; needs `MCP_TOKEN_SECRET` set in `.env`).
   `uv run python ../scripts/mcp_client_demo.py [--url http://localhost:8001/mcp]`
 - `chat_demo.py`: talk to the parent conversation in the terminal (in-memory DB, mock reader
   by default). `--demo` runs the golden path; interactive commands `/photo <file> [caption]`,

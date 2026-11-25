@@ -38,19 +38,20 @@ the family, the sharing, the consent, and the registry match of `parent_name`.
 
 ## Set up (once)
 
-1. Put a token secret in `.env` (repo root or `backend/`), so the Khayal servers and the
-   gateway share it. `scripts/start.py` uses it instead of a random one per run:
+1. Give `MCP_TOKEN_SECRET` a value in `.env` (repo root), so the Khayal servers and the gateway
+   share it; `scripts/start.py` then uses it instead of a random one per run. `.env.example`
+   already has an empty `MCP_TOKEN_SECRET=` line: fill it in with the output of
 
    ```sh
-   python3 -c 'import secrets; print("MCP_TOKEN_SECRET=" + secrets.token_urlsafe(32))' >> .env
+   python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
    ```
 
-2. Start Khayal and find your member id:
+2. Start Khayal (if it was already running, stop it first so it picks up the secret), then
+   find your member id in a second terminal:
 
    ```sh
-   cd backend
-   uv run python ../scripts/start.py --seed
-   uv run python ../scripts/family_gateway.py --who        # the demo family
+   cd backend && uv run python ../scripts/start.py --seed  # terminal 1, keeps running
+   cd backend && uv run python ../scripts/family_gateway.py --who   # terminal 2
    # Gowda family:
    #   mem_…  Lakshmi Gowda (parent)
    #   mem_…  Ravi Gowda (family member: use this id)
@@ -59,14 +60,27 @@ the family, the sharing, the consent, and the registry match of `parent_name`.
    For a family other than the demo one, pass `--who CHANNEL:NUMBER` (e.g.
    `--who telegram:123456789`).
 
-3. Add `FAMILY_GATEWAY_MEMBER_ID=mem_…` (a family member's id, not the parent's) to `.env`.
+3. Set `FAMILY_GATEWAY_MEMBER_ID` in `.env` (the line is already there) to a family member:
+   either the id from `--who` (`mem_…`, not the parent's), which changes every time the demo is
+   reseeded, or the member's channel and number, which does not:
+   `FAMILY_GATEWAY_MEMBER_ID=simulator:+919800000002` (Ravi in the demo). The gateway looks the
+   number up in the local database on every call. (No restart needed: only the gateway reads
+   this setting.)
 
 ## MCP Inspector
 
-Run this with Khayal running (Node 22+; use a current Inspector release):
+Run this with Khayal running (checked 25 Nov 2026 with Node 24 and the current
+`@modelcontextprotocol/inspector` from npm):
 
 ```sh
 npx @modelcontextprotocol/inspector uv --directory /ABSOLUTE/PATH/TO/Khayal/backend run python ../scripts/family_gateway.py
+```
+
+Without the browser UI (the same check, in the terminal):
+
+```sh
+npx @modelcontextprotocol/inspector --cli uv --directory /ABSOLUTE/PATH/TO/Khayal/backend run python ../scripts/family_gateway.py --method tools/list
+npx @modelcontextprotocol/inspector --cli uv --directory /ABSOLUTE/PATH/TO/Khayal/backend run python ../scripts/family_gateway.py --method tools/call --tool-name get_history --tool-arg range=7d
 ```
 
 In the Inspector, **Connect** and then **Tools → List Tools** should show exactly
@@ -127,4 +141,6 @@ These are the dashboard's own rules (`backend/app/sharing.py`), not a second cop
   identity provider.
 - No refresh and no revocation beyond the 60-second expiry. To stop the gateway, remove
   `FAMILY_GATEWAY_MEMBER_ID` or change `MCP_TOKEN_SECRET` and restart Khayal.
+- Claude Desktop with this config has not been run by us; the MCP Inspector commands above
+  have (25 Nov 2026).
 - The gateway trusts whoever can run it on this computer.

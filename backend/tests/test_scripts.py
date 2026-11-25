@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -112,3 +113,26 @@ def test_client_demo_over_real_http(seeded):
     assert reading.parent_id == info["parent_id"]  # resolved from _meta over HTTP
     assert reading.created_at > datetime.now(IST) - timedelta(minutes=1)
     assert any("approve_refill exposed: False" in line for line in lines)
+
+
+def test_start_refuses_and_keeps_the_database_when_khayal_is_already_running(
+    tmp_path, monkeypatch, capsys
+):
+    """`start.py --seed` is the documented demo reset: it must not wipe the database under
+    servers that are still running."""
+    import socket
+
+    start = load("start")
+    db = tmp_path / "khayal.db"
+    db.write_bytes(b"keep me")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
+    for name in ("MCP_TOKEN_SECRET", "MCP_SHARED_SECRET"):  # restored after the test
+        monkeypatch.setenv(name, os.environ.get(name, ""))
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        assert start.main(["--seed", "--port", str(port)]) == 1
+    assert db.read_bytes() == b"keep me"
+    assert "already in use" in capsys.readouterr().err
+    assert os.environ["MCP_TOKEN_SECRET"] == ""  # refused before changing anything

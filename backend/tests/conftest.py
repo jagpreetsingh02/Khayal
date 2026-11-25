@@ -34,6 +34,9 @@ for name, value in {
     # Secrets from your .env must not change test behaviour; tests pass their own.
     "SESSION_SECRET": "",
     "MCP_SHARED_SECRET": "",
+    "MCP_TOKEN_SECRET": "",  # set in .env for the family gateway; tests pass their own
+    "MCP_AUTH_MODE": "token",
+    "FAMILY_GATEWAY_MEMBER_ID": "",
 }.items():
     os.environ[name] = value
 

@@ -55,10 +55,10 @@ def _read_only(title: str) -> ToolAnnotations:
     )
 
 
-def create_gateway(
-    upstream: str, token_secret: str, member_id: str, timeout: float = 15
-) -> FastMCP:
-    """The gateway server. `upstream` is the Khayal MCP server URL (streamable HTTP)."""
+def create_gateway(upstream: str, token_secret: str, member: str, timeout: float = 15) -> FastMCP:
+    """The gateway server. `upstream` is the Khayal MCP server URL (streamable HTTP).
+    `member`: a member id (mem_...) or CHANNEL:NUMBER, looked up on every call (see
+    member_id_of), so it keeps working after the demo is reseeded with new ids."""
     gateway = FastMCP(
         "khayal-family",
         strict_input_validation=True,
@@ -70,7 +70,7 @@ def create_gateway(
     )
 
     async def forward(tool: str, args: dict[str, Any]) -> ToolResult:
-        token = mint_token(token_secret, member_id, "family")  # fresh per call, 60 s
+        token = mint_token(token_secret, member_id_of(member), "family")  # fresh, 60 s
         async with Client(upstream, auth=token, timeout=timeout) as client:
             result = await client.call_tool(
                 tool, {k: v for k, v in args.items() if v is not None}, raise_on_error=False
@@ -106,6 +106,21 @@ def create_gateway(
     return gateway
 
 
+def member_id_of(member: str) -> str:
+    """FAMILY_GATEWAY_MEMBER_ID as given (mem_...), or CHANNEL:NUMBER (e.g.
+    simulator:+919800000002) resolved in the local database. The Khayal server still checks
+    that the id is a family member."""
+    if member.startswith("mem_") or ":" not in member:
+        return member
+    from app.storage import get_store
+
+    channel, _, ref = member.partition(":")
+    found = get_store().find_member_by_channel(channel, ref)
+    if found is None:
+        raise ToolError(f"No member {member} in this database (check --who).")
+    return found.id
+
+
 def config_problems(settings) -> list[str]:
     problems = []
     if settings.app_mode == "aws":
@@ -118,7 +133,10 @@ def config_problems(settings) -> list[str]:
             "MCP server uses (start.py then uses it instead of a random one)."
         )
     if not settings.family_gateway_member_id:
-        problems.append("FAMILY_GATEWAY_MEMBER_ID is empty (find yours with --who).")
+        problems.append(
+            "FAMILY_GATEWAY_MEMBER_ID is empty: a member id from --who, or CHANNEL:NUMBER "
+            "(e.g. simulator:+919800000002 for Ravi in the demo)."
+        )
     host = urlparse(settings.mcp_server_url).hostname
     if host not in LOCAL_HOSTS:
         problems.append(f"MCP_SERVER_URL host {host!r} is not this machine (localhost only).")

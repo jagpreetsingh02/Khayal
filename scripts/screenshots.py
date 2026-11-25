@@ -141,6 +141,7 @@ def main(argv: list[str] | None = None) -> int:
         login = page(PHONE, None)
         login.evaluate("localStorage.clear()")
         login.reload()
+        login.get_by_role("button", name="Use the demo access token").click()
         login.fill("#token", args.token)
         login.get_by_role("button", name="Continue").click()
         login.wait_for_selector(".member-btn")

@@ -49,6 +49,12 @@ def wait_for_port(port: int, seconds: float, proc: subprocess.Popen) -> bool:
     return False
 
 
+def port_in_use(port: int) -> bool:
+    with socket.socket() as s:
+        s.settimeout(0.3)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Run the MCP server and the API together.")
     ap.add_argument("--port", type=int, default=8000, help="API port (default 8000)")
@@ -61,12 +67,21 @@ def main(argv: list[str] | None = None) -> int:
     # `kill <pid>` (SIGTERM) should stop both servers too, not only Ctrl+C.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     settings = get_settings()
+    mcp_port = urlparse(settings.mcp_server_url).port or 8001
+    # Before anything else (and before --seed wipes the database): is Khayal already running?
+    busy = [p for p in (args.port, mcp_port) if port_in_use(p)]
+    if busy:
+        print(
+            f"Port {' and '.join(map(str, busy))} is already in use: is Khayal still running? "
+            "Stop it first (Ctrl+C in its terminal), then run this again. Nothing was changed.",
+            file=sys.stderr,
+        )
+        return 1
     if settings.app_mode == "mock":  # one per run; children inherit it (env beats .env)
         if not settings.mcp_token_secret:
             os.environ["MCP_TOKEN_SECRET"] = secrets.token_urlsafe(32)
         if not settings.mcp_shared_secret:
             os.environ["MCP_SHARED_SECRET"] = secrets.token_urlsafe(32)
-    mcp_port = urlparse(settings.mcp_server_url).port or 8001
     py = sys.executable
     if args.seed:
         seed = Path(__file__).resolve().parent / "seed_demo.py"

@@ -54,8 +54,14 @@ Everything is on one port; **Ctrl+C** stops it.
 | Dashboard | **Overview** → **Approve** | Lakshmi's chat: "Refill approved for Telma 40 (30); your pharmacy will confirm." |
 | Dashboard | **What the AI did** | Every MCP tool call; **Approvals by the AI: 0**; `approve_refill: does not exist` |
 
-The full click-by-click video script is in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md). Checked
-on a fresh clone in an empty folder on macOS (23 Nov 2026); the Windows commands are the same
+**Reset to the clean demo** (between rehearsals): stop it with **Ctrl+C**, then run
+`uv run python ../scripts/start.py --seed` again (from `backend/`). That wipes the database and
+reseeds the Gowda family (Lakshmi, Ravi, Priya); if Khayal is still running it refuses and
+changes nothing.
+
+The full click-by-click video script is in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md); each claim
+with its proof (file or test) is in [docs/PITCH_FACTS.md](docs/PITCH_FACTS.md). Checked
+on a fresh clone in an empty folder on macOS (25 Nov 2026); the Windows commands are the same
 steps but have not been run on Windows.
 
 ### Run with Docker
@@ -68,8 +74,8 @@ docker compose up --build -d   # first build takes a few minutes
 open http://localhost:8000/simulator   # macOS; elsewhere paste it in a browser. /dashboard/ too
 ```
 
-`docker compose logs -f` shows the logs; `docker compose down` stops it (`down -v` also wipes
-the demo data).
+`docker compose logs -f` shows the logs; `docker compose down` stops it. To reset to the clean
+demo: `docker compose down -v && docker compose up -d` (`-v` wipes the demo data; init reseeds).
 
 Two containers from one image: `api` (port 8000, this machine only) and `mcp` (the MCP
 server, reachable only from the `api` container). A one-shot `init` step seeds the demo on
@@ -79,7 +85,7 @@ older volume gains the missing key. `.env` is optional and read if present
 (`KHAYAL_ENV_FILE=other.env` picks another file). With `APP_MODE=dev` or `aws`, nothing starts
 until `SESSION_SECRET` and `MCP_TOKEN_SECRET` are set to 32+ characters (and
 `MCP_AUTH_MODE=secret` is refused).
-(Docker: checked on macOS with Docker Desktop, 24 Nov 2026.)
+(Docker: checked on macOS with Docker Desktop from a fresh clone, 25 Nov 2026.)
 
 ---
 
@@ -133,8 +139,9 @@ reach the family.
    sharing and consent, and a live log of every tool call the AI made.
 6. **Reminders and voice.** Medicine reminders at the parent's times, one gentle follow-up,
    missed-dose alerts, automatic low-stock refill *requests* and a weekly summary for the
-   family. Voice notes in and out (Hindi and English, Tamil started), and a phone call to the
-   family for a confirmed red reading.
+   family. Voice notes in and out (English and Hindi; a few Tamil phrases), and a phone call to
+   the family for a confirmed red reading (a mock call card in the demo; the Twilio call
+   adapter is built but not tested live).
 
 ### Three human checkpoints
 
@@ -161,7 +168,7 @@ flowchart TB
     subgraph MCP["MCP server (own process)"]
       direction TB
       T["log_reading · get_history · get_meds<br/>create_reminder · alert_family<br/>request_refill · weekly_summary<br/><b>no approve tool</b>"]
-      G["Guardrails: sender from _meta, consent,<br/>limits re-checked, quantity caps,<br/>every call written to audit_log"]
+      G["Guardrails: caller from a signed per-call token,<br/>scopes per role, consent, limits re-checked,<br/>quantity caps, every call written to audit_log"]
       T --- G
     end
     T --> DB[("Store: readings · alerts · refills<br/>outbox · audit_log")]
@@ -189,8 +196,9 @@ flowchart TB
 - `backend/app/`: FastAPI app (channel webhooks, web simulator, dashboard API, built dashboard at
   `/dashboard`), the read-back conversation engine and the rule-based agent.
 - `backend/mcp_server/`: the FastMCP server, run as its own process. The agent calls it through
-  a real MCP client over streamable HTTP. The parent's identity travels in the request `_meta`
-  set by our backend, never in tool arguments the model writes.
+  a real MCP client over streamable HTTP. Each call carries a 60-second token signed by our
+  backend for the parent it acts for (`sub`), never in tool arguments the model writes; the
+  sender in `_meta` is only cross-checked (see [Security](#security)).
 - `dashboard/`: React + Vite + TypeScript + Recharts family dashboard.
 - Adapters picked in `.env`: channel (simulator / telegram / twilio), reader (mock / groq;
   bedrock is a stub), storage (sqlite; dynamodb planned), voice (none / mock / elevenlabs),
@@ -225,8 +233,8 @@ consent is pending, paused or revoked. The three read tools take one optional ar
 `parent_name`, for a family member whose family has more than one parent: it is matched only
 against the registry (full name or first name), and an unknown or ambiguous name returns an
 error listing the valid choices. Who may call what is set by **scopes** (see
-[Security](#security)): a family token lists and calls only the three read tools. Every call, including refusals, is written to
-`audit_log` and shown as "What the AI did" in the simulator and dashboard. The whole manifest
+[Security](#security)): a family token lists and calls only the three read tools. Every call,
+including refusals, is written to `audit_log` and shown as "What the AI did" in the simulator and dashboard. The whole manifest
 (names, descriptions, schemas, annotations) is pinned by hash (see [Security](#security)).
 
 ### Clinical rules
@@ -379,10 +387,12 @@ there needs a public audio URL; see the roadmap).
 
 - **Vision reader (Groq):** `LLM_PROVIDER=groq`, `GROQ_API_KEY`; 📎 in the simulator then uploads
   a real photo. The free tier allows about 3 photos a minute.
-- **Telegram:** `CHANNEL=telegram` and `TELEGRAM_BOT_TOKEN` (from @BotFather). The API long-polls,
+- **Telegram** (built and unit-tested with a mocked Bot API; not yet run live with a real bot):
+  `CHANNEL=telegram` and `TELEGRAM_BOT_TOKEN` (from @BotFather). The API long-polls,
   so no public URL is needed. Send `/id` to your bot, then register yourself:
   `uv run python ../scripts/add_member.py --channel telegram --ref <id> --role parent --name "Me"`.
-- **WhatsApp (Twilio Sandbox):** `CHANNEL=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+- **WhatsApp (Twilio Sandbox)** (built and unit-tested with signed test requests; not yet run
+  live): `CHANNEL=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
   `PUBLIC_BASE_URL` (e.g. an ngrok https URL) and the Sandbox webhook set to
   `<PUBLIC_BASE_URL>/webhooks/twilio`. Requests without a valid `X-Twilio-Signature` are
   refused. Alerts to numbers outside the 24-hour window need `TWILIO_TEMPLATE_CONTENT_SID`.
@@ -440,8 +450,10 @@ exact match on every field (systolic, diastolic, pulse, or glucose value and uni
 - **Parent consents, not the child.** The parent agrees in chat, can reply STOP at any time, and
   chooses what the family sees (readings, alerts, medicines). Children cannot change it. One
   exception for safety: red alerts always reach the family, even if alerts are not shared.
-  While paused, nothing is logged, alerted or reminded. SPDI-compliant today, built for DPDP (consent
-  duties start 13 May 2027). We do not claim end-to-end encryption.
+  While paused, nothing is logged, alerted or reminded. Designed with India's SPDI Rules and the
+  DPDP Act in mind (DPDP consent duties start 13 May 2027), but not audited for compliance, and
+  DPDP data export / delete is not built yet (see [Production readiness](#production-readiness)).
+  We do not claim end-to-end encryption.
 - **Refills happen off WhatsApp.** WhatsApp's policy prohibits drug sales, so chat only carries
   status messages. Orders go to a licensed pharmacy that checks the prescription (a clearly
   labelled stub here). Schedule X medicines are excluded; quantities are capped server-side.
@@ -572,7 +584,7 @@ Where the hardening stands. Khayal is a working demo, not yet a service for real
 | Area | Status |
 |---|---|
 | Delivery: outbox retries, red alerts retried until delivered, inbound dedup, per-parent order (H1) | Done |
-| Security: signed sessions, one-time codes, rate limits, MCP bearer auth, startup config check, CSP, simulator mock-only (H2, H3) | Done |
+| Security: signed sessions, one-time codes, rate limits, MCP bearer auth (replaced by per-call tokens in S2; the shared bearer remains for mock mode only), startup config check, CSP, simulator mock-only (H2, H3) | Done |
 | Types, CI (lint, format, mypy, tests on 3.11 + 3.13, dashboard build, dependency audit), Docker image + Compose, `/health` with DB and MCP checks (H3) | Done |
 | Clinical rules (2025 AHA/ACC, ADA 2026), MCP tool annotations + output schemas, red-team suite, tool-manifest pin, Host/Origin guard, real-photo accuracy harness (H4) | Done |
 | Durable inbox: webhook and poller messages are stored before the channel gets its answer, processed with leases, retried, recovered after a crash, replayed safely (S1) | Done |
