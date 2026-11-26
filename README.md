@@ -103,6 +103,14 @@ flowchart TB
   F3 -->|"dashboard API only;<br/>parent gets a status message"| DB
 ```
 
+![Khayal in one picture: parent photo, Khayal reads it, MCP server with 7 narrow tools, store and audit log, family; three human checkpoints](docs/architecture-simple.png)
+
+Detailed view:
+
+![Khayal architecture, detailed: parent chat, channels and durable inbox, API process, MCP server with signed per-call tokens and guardrails, store, family dashboard and the three human checkpoints](docs/architecture.png)
+
+*Vector versions: [docs/architecture-simple.svg](docs/architecture-simple.svg) and [docs/architecture.svg](docs/architecture.svg). Built, not run live: Telegram, WhatsApp via Twilio and Twilio calls. AWS is design only, nothing deployed.*
+
 - `backend/app/`: FastAPI app (channels, web simulator, dashboard API), the read-back engine and
   the rule-based agent.
 - `backend/mcp_server/`: the FastMCP server, its own process, called over streamable HTTP. Each
@@ -315,6 +323,10 @@ real providers, reading accuracy): [docs/DEVELOPING.md](docs/DEVELOPING.md).
 ## Docs index
 
 - [docs/AWS_ARCHITECTURE.md](docs/AWS_ARCHITECTURE.md): the AWS production design, built versus designed, row by row.
+- [docs/architecture-simple.png](docs/architecture-simple.png): Khayal in one picture: the five steps and the three human checkpoints.
+- [docs/architecture-simple.svg](docs/architecture-simple.svg): the same one-picture overview as a vector image.
+- [docs/architecture.png](docs/architecture.png): the detailed architecture: channels, inbox and outbox, API process, MCP server, store and family.
+- [docs/architecture.svg](docs/architecture.svg): the same detailed architecture as a vector image.
 - [docs/CLINICAL_RULES.md](docs/CLINICAL_RULES.md): every alert rule for BP and glucose, and the plausibility checks.
 - [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md): the click-by-click demo script, seed data and screenshots.
 - [docs/DEVELOPING.md](docs/DEVELOPING.md): commands, tests, CI, dashboard API, Docker, voice and reminders, real providers, reading accuracy.

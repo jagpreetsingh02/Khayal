@@ -1,0 +1,225 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1090" viewBox="0 0 1800 1090" font-family="Inter, DejaVu Sans, Arial, sans-serif">
+<defs>
+<filter id="sh" x="-5%" y="-5%" width="110%" height="115%"><feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#1f3a5f" flood-opacity="0.16"/></filter>
+<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#35527d"/></marker>
+<marker id="ah_s" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#35527d"/></marker>
+</defs>
+<style>
+.title{font-size:28px;font-weight:700;fill:#12284a}
+.sub{font-size:14.5px;fill:#4a5d78}
+.lane{font-size:14px;font-weight:700;fill:#2c4468;letter-spacing:.8px}
+.lsub{font-size:11.5px;fill:#5d6f8a}
+.bt{font-size:14.5px;font-weight:700}
+.bl{font-size:12.2px;fill:#2a3a52}
+.bm{font-size:12px;fill:#2a3a52;font-family:"DejaVu Sans Mono",monospace}
+.bs{font-size:12px;fill:#a02525;font-family:"DejaVu Sans Mono",monospace;text-decoration:line-through}
+.bg{font-size:12px;fill:#8a1f1f;font-weight:600}
+.al{font-size:11px;font-weight:600}
+.bn{font-size:12px;font-weight:700;fill:#fff}
+.lg{font-size:12px;fill:#2a3a52}
+.lgb{font-size:12.5px;font-weight:700;fill:#1f3a5f}
+</style>
+<rect width="1800" height="1090" fill="#ffffff"/>
+<text x="30" y="40" class="title">Khayal architecture</text>
+<text x="30" y="62" class="sub">WhatsApp-first MCP health helper: the AI can read, log, remind and request. It cannot confirm, set limits or approve. Humans do that.</text>
+<rect x="20" y="76" width="240" height="860" rx="14" fill="#f4f7fb" stroke="#c9d3e0" stroke-width="1.5"/>
+<text x="140.0" y="100" text-anchor="middle" class="lane">PARENT</text>
+<text x="140.0" y="116" text-anchor="middle" class="lsub">phone: WhatsApp / Telegram / simulator</text>
+<rect x="300" y="76" width="250" height="860" rx="14" fill="#f4f7fb" stroke="#c9d3e0" stroke-width="1.5"/>
+<text x="425.0" y="100" text-anchor="middle" class="lane">CHANNELS &amp; DELIVERY</text>
+<text x="425.0" y="116" text-anchor="middle" class="lsub">adapters, durable inbox, outbox</text>
+<rect x="590" y="76" width="310" height="860" rx="14" fill="#f4f7fb" stroke="#c9d3e0" stroke-width="1.5"/>
+<text x="745.0" y="100" text-anchor="middle" class="lane">KHAYAL API PROCESS</text>
+<text x="745.0" y="116" text-anchor="middle" class="lsub">FastAPI: conversation engine + agent</text>
+<rect x="960" y="76" width="330" height="860" rx="14" fill="#eef6f1" stroke="#a9cdb6" stroke-width="1.5"/>
+<text x="1125.0" y="100" text-anchor="middle" class="lane">MCP SERVER PROCESS</text>
+<text x="1125.0" y="116" text-anchor="middle" class="lsub">FastMCP, streamable HTTP, own process</text>
+<rect x="1330" y="76" width="450" height="860" rx="14" fill="#f4f7fb" stroke="#c9d3e0" stroke-width="1.5"/>
+<text x="1555.0" y="100" text-anchor="middle" class="lane">STORE &amp; FAMILY</text>
+<text x="1555.0" y="116" text-anchor="middle" class="lsub">SQLite (WAL), dashboard, family phones</text>
+<rect x="30" y="125" width="220" height="135" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="30" y="125" width="6" height="135" rx="3" fill="#5b7aa6"/>
+<text x="46" y="148" class="bt" fill="#1f3a5f">Parent</text>
+<text x="46" y="168" class="bl">Photo of BP / glucose meter</text>
+<text x="46" y="186" class="bl">Photo of a medicine strip</text>
+<text x="46" y="204" class="bl">Voice note or typed reply</text>
+<text x="46" y="222" class="bl">Replies 1 (yes) or 2 (no)</text>
+<rect x="30" y="290" width="220" height="118" rx="10" fill="#e8f6ec" stroke="#2f8f4e" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="30" y="290" width="6" height="118" rx="3" fill="#2f8f4e"/>
+<text x="46" y="313" class="bt" fill="#1c6a37">CHECKPOINT 1: Parent</text>
+<text x="46" y="333" class="bl">Is this the right reading?</text>
+<text x="46" y="351" class="bl">'I read 186/121. Correct?</text>
+<text x="46" y="369" class="bl">1 yes / 2 no'</text>
+<text x="46" y="387" class="bl">Nothing is confirmed before 1.</text>
+<rect x="30" y="440" width="220" height="130" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="30" y="440" width="6" height="130" rx="3" fill="#5b7aa6"/>
+<text x="46" y="463" class="bt" fill="#1f3a5f">Parent receives</text>
+<text x="46" y="483" class="bl">Read-back question</text>
+<text x="46" y="501" class="bl">Severe-BP warning-signs check</text>
+<text x="46" y="519" class="bl">Medicine reminder + voice note</text>
+<text x="46" y="537" class="bl">Refill approved / rejected</text>
+<rect x="310" y="125" width="230" height="100" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<text x="326" y="148" class="bt" fill="#1f3a5f">Channel adapters</text>
+<text x="326" y="168" class="bl">simulator · telegram · twilio</text>
+<text x="326" y="186" class="bl">Signature / secret verified</text>
+<text x="326" y="204" class="bl">Dedup: MessageSid, update_id</text>
+<rect x="310" y="255" width="230" height="180" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<text x="326" y="278" class="bt" fill="#1f3a5f">Durable inbox</text>
+<text x="326" y="298" class="bl">Stored BEFORE the channel is</text>
+<text x="326" y="316" class="bl">answered; leased worker</text>
+<text x="326" y="334" class="bl">Retries 5 s, 30 s, 2 min, 10 min</text>
+<text x="326" y="352" class="bl">Failed after 5 tries, audited</text>
+<text x="326" y="370" class="bl">Replay-safe; at-least-once</text>
+<text x="326" y="388" class="bl">Payload blanked when done</text>
+<rect x="310" y="610" width="230" height="150" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<text x="326" y="633" class="bt" fill="#1f3a5f">Outbox (family messages)</text>
+<text x="326" y="653" class="bl">Alerts, refill notices,</text>
+<text x="326" y="671" class="bl">missed doses, weekly summary</text>
+<text x="326" y="689" class="bl">Delivered only after the</text>
+<text x="326" y="707" class="bl">channel accepts it</text>
+<text x="326" y="725" class="bl">Red alerts retried until sent</text>
+<rect x="310" y="790" width="230" height="110" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<text x="326" y="813" class="bt" fill="#1f3a5f">Voice and calls</text>
+<text x="326" y="833" class="bl">Voice notes: mock / ElevenLabs</text>
+<text x="326" y="851" class="bl">Red-reading call: mock / Twilio</text>
+<text x="326" y="869" class="bl">(Twilio built, not run live)</text>
+<rect x="600" y="125" width="290" height="105" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<text x="616" y="148" class="bt" fill="#1f3a5f">Vision reader</text>
+<text x="616" y="168" class="bl">Groq (or mock), strict JSON out</text>
+<text x="616" y="186" class="bl">No tools, no actions:</text>
+<text x="616" y="204" class="bl">it only reads the screen</text>
+<rect x="600" y="258" width="290" height="205" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<text x="616" y="281" class="bt" fill="#1f3a5f">Read-back + clinical engine</text>
+<text x="616" y="301" class="bl">Waits for the parent's 1 / 2</text>
+<text x="616" y="319" class="bl">Plausibility checks, repeat-BP rule</text>
+<text x="616" y="337" class="bl">BP ≥180/120: warning-signs first;</text>
+<text x="616" y="355" class="bl">yes = RED + 108/112; silent 15 min</text>
+<text x="616" y="373" class="bl">= RED. Glucose 54 red / 70 amber</text>
+<text x="616" y="391" class="bl">Doctor's limits, not the AI's</text>
+<rect x="600" y="490" width="290" height="88" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<text x="616" y="513" class="bt" fill="#1f3a5f">Rule-based agent</text>
+<text x="616" y="533" class="bl">Allowlisted MCP tools only</text>
+<text x="616" y="551" class="bl">No free-form model actions</text>
+<rect x="600" y="606" width="290" height="115" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<text x="616" y="629" class="bt" fill="#1f3a5f">MCP client + token minting</text>
+<text x="616" y="649" class="bl">New HS256 JWT for every call, 60 s</text>
+<text x="616" y="667" class="bl">sub = member id, role, scopes</text>
+<text x="616" y="685" class="bl">Identity never in model arguments</text>
+<rect x="600" y="750" width="290" height="120" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<text x="616" y="773" class="bt" fill="#1f3a5f">Scheduler</text>
+<text x="616" y="793" class="bl">Medicine reminders + 1 follow-up</text>
+<text x="616" y="811" class="bl">Missed-dose alerts</text>
+<text x="616" y="829" class="bl">Low-stock refill requests</text>
+<text x="616" y="847" class="bl">Weekly summary</text>
+<rect x="970" y="125" width="310" height="140" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="970" y="125" width="6" height="140" rx="3" fill="#2f8f4e"/>
+<text x="986" y="148" class="bt" fill="#1f3a5f">Auth + transport guard</text>
+<text x="986" y="168" class="bl">KhayalTokenVerifier: iss, aud,</text>
+<text x="986" y="186" class="bl">exp, sub; scopes per role</text>
+<text x="986" y="204" class="bl">tools/list filtered per role</text>
+<text x="986" y="222" class="bl">Host / Origin check (rebinding)</text>
+<text x="986" y="240" class="bl">Manifest SHA-256 pinned per role</text>
+<rect x="970" y="293" width="310" height="300" rx="10" fill="#ffffff" stroke="#2f8f4e" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="970" y="293" width="6" height="300" rx="3" fill="#2f8f4e"/>
+<text x="986" y="316" class="bt" fill="#1c6a37">7 MCP tools (parent role)</text>
+<text x="986" y="340" class="bm" font-weight="700">log_reading</text><text x="986" y="355" class="bl" fill="#4a5d78">stored unconfirmed only</text>
+<text x="986" y="371" class="bm" font-weight="700">get_history</text><text x="986" y="386" class="bl" fill="#4a5d78">confirmed readings</text>
+<text x="986" y="402" class="bm" font-weight="700">get_meds</text><text x="986" y="417" class="bl" fill="#4a5d78">medicines and stock</text>
+<text x="986" y="433" class="bm" font-weight="700">create_reminder</text><text x="986" y="448" class="bl" fill="#4a5d78">confirmed medicines only</text>
+<text x="986" y="464" class="bm" font-weight="700">alert_family</text><text x="986" y="479" class="bl" fill="#4a5d78">level + reading_id only</text>
+<text x="986" y="495" class="bm" font-weight="700">request_refill</text><text x="986" y="510" class="bl" fill="#4a5d78">creates pending_approval</text>
+<text x="986" y="526" class="bm" font-weight="700">weekly_summary</text><text x="986" y="541" class="bl" fill="#4a5d78">descriptive only</text>
+<rect x="984" y="559" width="282" height="26" rx="6" fill="#fdeeee" stroke="#c0392b" stroke-dasharray="5 3"/>
+<text x="994" y="576" class="bs">approve_refill</text><text x="1112" y="576" class="bg">does not exist</text>
+<rect x="970" y="621" width="310" height="165" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="970" y="621" width="6" height="165" rx="3" fill="#2f8f4e"/>
+<text x="986" y="644" class="bt" fill="#1f3a5f">Server-side guardrails</text>
+<text x="986" y="664" class="bl">Consent: paused / revoked refused</text>
+<text x="986" y="682" class="bl">Doctor limits re-checked on alerts</text>
+<text x="986" y="700" class="bl">alert_family refuses unconfirmed</text>
+<text x="986" y="718" class="bl">One alert per (reading, rule):</text>
+<text x="986" y="736" class="bl">unique index in the database</text>
+<text x="986" y="754" class="bl">Quantity caps, strict input checks</text>
+<text x="986" y="772" class="bl">Every call written to audit_log</text>
+<rect x="970" y="812" width="310" height="108" rx="10" fill="#ffffff" stroke="#8a9bb5" stroke-width="1.8" stroke-dasharray="6 4" filter="url(#sh)"/>
+<text x="986" y="835" class="bt" fill="#1f3a5f">Family MCP gateway</text>
+<text x="986" y="855" class="bl">Local stdio demo bridge for</text>
+<text x="986" y="873" class="bl">Claude Desktop (localhost only)</text>
+<text x="986" y="891" class="bl">Family role: get_history, get_meds,</text>
+<text x="986" y="909" class="bl">weekly_summary. Read-only, audited</text>
+<rect x="1340" y="125" width="430" height="130" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="1340" y="125" width="6" height="130" rx="3" fill="#5b7aa6"/>
+<text x="1356" y="148" class="bt" fill="#1f3a5f">Store (SQLite, WAL)</text>
+<text x="1356" y="168" class="bl">readings · alerts · refills · medicines · doses</text>
+<text x="1356" y="186" class="bl">inbox · outbox · reminders</text>
+<text x="1356" y="204" class="bl">doctor limits (set_by = doctor)</text>
+<text x="1356" y="222" class="bl">audit_log: every tool call, who and why</text>
+<text x="1356" y="240" class="bl">DynamoDB adapter: planned</text>
+<rect x="1340" y="285" width="430" height="170" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="1340" y="285" width="6" height="170" rx="3" fill="#5b7aa6"/>
+<text x="1356" y="308" class="bt" fill="#1f3a5f">Family dashboard + API (React/Vite, FastAPI)</text>
+<text x="1356" y="328" class="bl">Trends, alerts, medicines, sharing and consent</text>
+<text x="1356" y="346" class="bl">Signed sessions, one-time codes, rate limits</text>
+<text x="1356" y="364" class="bl">What the AI did: every tool call, 'Approvals by AI: 0'</text>
+<text x="1356" y="382" class="bl">Approve / reject refill: POST /api/refills/{id}/approve</text>
+<text x="1356" y="400" class="bl">Not an MCP tool: only a family member's click</text>
+<rect x="1340" y="485" width="430" height="68" rx="10" fill="#e8f6ec" stroke="#2f8f4e" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="1340" y="485" width="6" height="68" rx="3" fill="#2f8f4e"/>
+<text x="1356" y="508" class="bt" fill="#1c6a37">CHECKPOINT 2: Doctor</text>
+<text x="1356" y="528" class="bl">Alert limits set on the dashboard as doctor-set values;</text>
+<text x="1356" y="546" class="bl">the AI cannot change them</text>
+<rect x="1340" y="573" width="430" height="68" rx="10" fill="#e8f6ec" stroke="#2f8f4e" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="1340" y="573" width="6" height="68" rx="3" fill="#2f8f4e"/>
+<text x="1356" y="596" class="bt" fill="#1c6a37">CHECKPOINT 3: Family</text>
+<text x="1356" y="616" class="bl">A refill is ordered only after a family member</text>
+<text x="1356" y="634" class="bl">approves it. request_refill only creates a request</text>
+<rect x="1340" y="661" width="430" height="72" rx="10" fill="#ffffff" stroke="#8a9bb5" stroke-width="1.8" stroke-dasharray="6 4" filter="url(#sh)"/>
+<text x="1356" y="684" class="bt" fill="#1f3a5f">Partner pharmacy (demo stub)</text>
+<text x="1356" y="704" class="bl">Outside WhatsApp; no real order is placed</text>
+<text x="1356" y="722" class="bl">in this demo</text>
+<rect x="1340" y="763" width="430" height="150" rx="10" fill="#ffffff" stroke="#5b7aa6" stroke-width="1.8" filter="url(#sh)"/>
+<rect x="1340" y="763" width="6" height="150" rx="3" fill="#5b7aa6"/>
+<text x="1356" y="786" class="bt" fill="#1f3a5f">Family on WhatsApp / Telegram</text>
+<text x="1356" y="806" class="bl">AMBER and RED alerts with reading time</text>
+<text x="1356" y="824" class="bl">Refill requests, missed-dose notices</text>
+<text x="1356" y="842" class="bl">Weekly summary</text>
+<text x="1356" y="860" class="bl">RED reading: phone call (mock / Twilio)</text>
+<path d="M250,150 L310,150" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<circle cx="280" cy="134" r="11" fill="#1f3a5f"/><text x="280" y="138.5" text-anchor="middle" class="bn">1</text>
+<path d="M425,225 L425,255" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<circle cx="444" cy="240" r="11" fill="#1f3a5f"/><text x="444" y="244.5" text-anchor="middle" class="bn">2</text>
+<path d="M540,345 L600,345" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<circle cx="582" cy="328" r="11" fill="#1f3a5f"/><text x="582" y="332.5" text-anchor="middle" class="bn">3</text>
+<path d="M745,258 L745,230" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)" marker-start="url(#ah_s)"/>
+<path d="M745,463 L745,490" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<path d="M745,578 L745,606" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<path d="M890,663 L930,663 L930,195 L970,195" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<circle cx="930" cy="420" r="11" fill="#1f3a5f"/><text x="930" y="424.5" text-anchor="middle" class="bn">4</text>
+<text x="916" y="520" text-anchor="middle" class="al" fill="#35527d" transform="rotate(-90 916 520)">MCP call + signed token</text>
+<path d="M1125,265 L1125,293" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<path d="M1125,593 L1125,621" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<path d="M1280,430 L1310,430 L1310,190 L1340,190" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<circle cx="1310" cy="310" r="11" fill="#1f3a5f"/><text x="1310" y="314.5" text-anchor="middle" class="bn">5</text>
+<text x="1296" y="350" text-anchor="middle" class="al" fill="#35527d" transform="rotate(-90 1296 350)">reads, writes, audit</text>
+<path d="M1125,812 L1125,786" fill="none" stroke="#7a8aa5" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#ah)"/>
+<path d="M1555,255 L1555,285" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)" marker-start="url(#ah_s)"/>
+<path d="M1555,641 L1555,661" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<path d="M745,750 L745,721" fill="none" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/>
+<text x="836" y="742" text-anchor="middle" class="al" fill="#35527d">reminders, low stock</text>
+<path d="M600,430 L562,430 L562,195 L540,195" fill="none" stroke="#6b7f9e" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#ah)"/>
+<path d="M600,820 L562,820 L562,430" fill="none" stroke="#6b7f9e" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#ah)"/>
+<text x="578" y="640" text-anchor="middle" class="al" fill="#556a8a" transform="rotate(-90 578 640)">replies, reminders</text>
+<path d="M310,170 L285,170 L285,505 L250,505" fill="none" stroke="#6b7f9e" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#ah)"/>
+<path d="M310,685 L280,685 L280,968 L1555,968 L1555,913" fill="none" stroke="#c27a1a" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#ah)"/>
+<text x="900" y="958" text-anchor="middle" class="al" fill="#a8630f">family alerts, refill notices, weekly summary (retried until delivered)</text>
+<circle cx="1555" cy="968" r="11" fill="#1f3a5f"/><text x="1555" y="972.5" text-anchor="middle" class="bn">6</text>
+<rect x="20" y="996" width="1760" height="80" rx="12" fill="#f4f7fb" stroke="#c9d3e0"/>
+<text x="38" y="1020" class="lgb">How to read it</text>
+<path d="M38,1040 L88,1040" stroke="#35527d" stroke-width="2.2" marker-end="url(#ah)"/><text x="98" y="1044" class="lg">request / data flow</text>
+<path d="M270,1040 L320,1040" stroke="#6b7f9e" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#ah)"/><text x="330" y="1044" class="lg">messages out to people</text>
+<rect x="520" y="1030" width="22" height="20" rx="4" fill="#e8f6ec" stroke="#2f8f4e" stroke-width="1.8"/><text x="550" y="1044" class="lg">human checkpoint</text>
+<rect x="690" y="1030" width="22" height="20" rx="4" fill="#fff" stroke="#8a9bb5" stroke-dasharray="5 3" stroke-width="1.8"/><text x="720" y="1044" class="lg">stub / demo bridge</text>
+<text x="38" y="1064" class="lg" font-weight="600">Built and run in the demo: everything above, in mock mode (simulator, mock reader, mock voice). Built, not run live: Telegram, WhatsApp via Twilio, Twilio calls. Design only, not deployed: AWS (docs/AWS_ARCHITECTURE.md).</text>
+<text x="880" y="1026" class="lg">The model never holds identity or approval: identity is the signed per-call token, and approval is a click on the dashboard.</text>
+<text x="880" y="1044" class="lg">Numbered path: photo 1, adapter 2, inbox 3, MCP call 4, store and audit 5, delivery to the family 6.</text>
+</svg>
