@@ -33,7 +33,8 @@ With Docker instead: `docker compose down -v && docker compose up -d`.
    - **Left:** http://localhost:8000/simulator (parent's chat in the middle, Ravi's and Priya's
      phones on the side, the live MCP tool log below).
    - **Right:** http://localhost:8000/dashboard/ → **Use the demo access token** → `change-me` → **Continue** →
-     **Ravi Gowda**.
+     **Ravi Gowda**. (Or **Send me a code** → **Ravi Gowda**: the 6-digit code appears on Ravi's
+     phone in the simulator.)
 4. Turn your browser's sound on (voice notes and the call card are read aloud by the browser in
    mock mode).
 
@@ -127,7 +128,9 @@ Show the simulator.
 1. Click **🖼️** → **strip telma40**.
    Chat: *"Telma 40 = Telmisartan 40 mg. Remind at 8 PM? Reply 1 yes / 2 no"* → click **1**.
    Chat: *"Done. I will remind you to take Telma 40 at 8:00 AM and 8:00 PM every day."*
-   (Telma 40 is already on her list from the morning, so the evening time is added.)
+   (Telma 40 is already on her list from the morning, so the evening time is added. The reader
+   only picks an id from the parent's medicines and the curated brand list, or "unknown"; it
+   never returns the printed text.)
 
 > **Say:** "A photo of the strip becomes the generic name and a reminder, again only after she
 > says yes."
@@ -163,7 +166,8 @@ Show the simulator.
 > here it's a labelled stub."
 
 If **Simulate low stock** says a refill is already pending (the scheduler requests one by itself
-when 5 or fewer days are left), go straight to **Approve**.
+when 5 or fewer days are left), go straight to **Approve**. Approving a refill twice is safe; the
+first click wins.
 
 ### 3:10 Parent turns off sharing (25 s)
 
@@ -172,6 +176,7 @@ when 5 or fewer days are left), go straight to **Approve**.
 2. **Limits & sharing** → under *Sharing and consent*, switch off **Medicines**.
 3. **Sign out** → sign in as **Ravi Gowda** → **Medicines** now says *"Lakshmi Gowda has not
    shared medicines and refills with the family."*
+   (Turning off *Alerts* hides amber alerts; red alerts still reach the family.)
 
 > **Say:** "Lakshmi consents, not her children, and she decides what they see. Only red alerts
 > always get through, for safety."
@@ -201,7 +206,10 @@ Dashboard (as Ravi): **What the AI did**.
   and send the reading."* and *"Did you faint, feel confused, or did someone have to help you?
   Reply 1 yes / 2 no"*. Ravi and Priya: *"AMBER alert for Lakshmi Gowda: Glucose 62 mg/dL at …
   is below the limit her doctor set (70). A recheck in 15 minutes was requested."* Three
-  **⏩ Skip 5 minutes** with no recheck: a second AMBER, *"…No recheck came within 15 minutes."*
+  **⏩ Skip 5 minutes** (or **⏩ 30 min**) with no recheck: a second AMBER, *"…No recheck came
+  within 15 minutes."*
+- To have the doctor's own plan quoted instead of the generic line, set it first on the
+  dashboard under **Limits & sharing** → *Doctor's plan for low sugar*.
 - Type `sugar 45` → **1**: the children get **RED** *"Glucose 45 mg/dL at … is below the limit
   her doctor set (54). Please call now."* plus a call card; Lakshmi is told she has been
   reported, to follow her doctor's plan, to recheck in 15 minutes and to call 108/112 if unwell.
@@ -228,5 +236,20 @@ browser UI: add `--cli` after `inspector` and `--method tools/list` at the end.)
 - Type `what's the weather?` in Lakshmi's chat: *"I can only help with readings and medicines."*
 - **🗣️** → *“I took my medicine”* after a reminder: marked as taken, answered with a voice note.
 - **📊 Weekly summary**: the descriptive 7-day summary goes to the children.
-- **Reset demo**: a fresh family with consent *pending*; type `hello` to see onboarding.
+- **Reset demo**: a fresh family with consent *pending*; type `hello` → consent notice → **1**
+  to see onboarding.
 - With `LLM_PROVIDER=groq` and a key, use **📎** to upload a real photo of a meter.
+
+## Screenshots
+
+![Simulator: Indian English voice-note reminder, the parent's English voice-note replies, and an Incoming call card for the red alert in each child's pane](screenshots/voice-and-call.png)
+
+| Trends with doctor-set bands | What the AI did |
+|---|---|
+| ![BP and glucose charts over 14 days with amber and red bands set by the doctor](screenshots/dashboard-trends.png) | ![Audit log: AI tool calls, refusals, zero approvals by the AI, one approval by family](screenshots/dashboard-audit.png) |
+
+| Refill history (phone) | Sharing and limits (parent's view) | Alerts |
+|---|---|---|
+| ![Refill approved by Ravi and sent to the demo pharmacy](screenshots/dashboard-refills-phone.png) | ![Consent status, sharing switches and limit editor labelled set by your doctor](screenshots/dashboard-sharing-phone.png) | ![Alerts feed with red and amber levels](screenshots/dashboard-alerts.png) |
+
+Regenerate them: [DEVELOPING.md](DEVELOPING.md#screenshots).

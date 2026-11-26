@@ -23,8 +23,8 @@ Facts only, each with where it is proved. Paths are from the repo root; test nam
 - **671 pass, 2 skipped** (the 2 live API tests run only with `RUN_LIVE_TESTS=1`), in 28 test
   files: `cd backend && uv run pytest`. No test calls a real API: `tests/conftest.py` forces
   mock providers and fails any non-local network connection (`test_network_guard.py`).
-- Red-team suite: 121 tests in `test_redteam.py`, mapped to incident classes in the README
-  section "Threats we test for".
+- Red-team suite: 121 tests in `test_redteam.py`, mapped to incident classes in
+  [SECURITY.md](SECURITY.md#threats-we-test-for) (summary table in the README).
 - CI on every push: ruff, ruff format, mypy, tests on Python 3.11 and 3.13, dashboard lint and
   build, dependency audit (`.github/workflows/ci.yml`).
 
@@ -47,7 +47,7 @@ Facts only, each with where it is proved. Paths are from the repo root; test nam
 | No answer and no repeat within 15 minutes (silent parent) | RED `bp_severe_no_reply` ("Please call her now") | `test_no_reply_and_no_repeat_is_red_at_15_minutes_and_not_before`, `test_red_no_reply_alert_takes_the_normal_red_path` |
 
 Code: `backend/app/alerts/thresholds.py`, `backend/app/conversation/engine.py`. Source of the
-rules: 2025 AHA/ACC blood-pressure guideline (README "Clinical rules").
+rules: 2025 AHA/ACC blood-pressure guideline ([CLINICAL_RULES.md](CLINICAL_RULES.md)).
 
 ### Glucose (ADA Standards of Care 2026)
 | Situation | Result | Test |
@@ -88,7 +88,7 @@ rules: 2025 AHA/ACC blood-pressure guideline (README "Clinical rules").
 ## Reading accuracy
 
 - 14 of 16 **AI-generated** test images read with every field exact (BP 11/13, glucometer
-  3/3), Groq reader, 23 Nov 2026 (README "Reading accuracy"). Not real photos of Indian home
+  3/3), Groq reader, 23 Nov 2026 ([DEVELOPING.md](DEVELOPING.md#reading-accuracy)). Not real photos of Indian home
   devices; no real-photo accuracy number exists yet. The real-photo harness is built
   (`scripts/accuracy_test.py --import`).
 
@@ -112,7 +112,7 @@ rules: 2025 AHA/ACC blood-pressure guideline (README "Clinical rules").
 | Postgres / DynamoDB adapter, schema migrations, JSON logging, DPDP export / delete | Planned |
 | Family MCP access via OAuth 2.1 with per-person consent | Planned |
 
-Source: README "Production readiness".
+Source: README "What is built and what is not".
 
 ## Known limits
 
@@ -124,7 +124,7 @@ Source: README "Production readiness".
 - Dashboard rate limits are in memory in one process; the session token is in localStorage;
   no TLS in the app; no external security review or penetration test.
 - Message handling is at least once, not exactly once: after a crash the reply to the parent
-  can be sent twice (README "Reliability").
+  can be sent twice ([RELIABILITY.md](RELIABILITY.md)).
 - Not audited for SPDI / DPDP compliance; DPDP export / delete is not built.
 - Windows commands in the README have not been run on Windows.
 - Simulator "Skip 5 minutes" moves the parent's recent data back in time, so alerts sent
