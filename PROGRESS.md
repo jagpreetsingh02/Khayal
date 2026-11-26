@@ -162,6 +162,8 @@ Repo: https://github.com/jagpreetsingh02/Khayal (public; renamed, remote updated
   `init` writes mock secrets once; dev/aws startup check exits 1 on unsafe config.
 
 ## Session log (newest first, one line each)
+- 2026-11-26: readme-evaluator — README restructured for judges (680 -> ~330 lines); detail moved
+  to docs/ (PROBLEM_AND_SOURCES, MCP_TOOLS, CLINICAL_RULES, SECURITY, RELIABILITY, DEVELOPING); docs only.
 - 2026-11-25: pitch readiness — 669 -> 671 tests; fixed screenshots.py login, start.py busy-port
   guard, conftest blanks MCP_TOKEN_SECRET (a set one made a test start a real server and hang).
 - 2026-11-25: S2 per-call tokens + family view — 638 -> 669 tests; live: start.py, gateway over
